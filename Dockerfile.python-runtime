@@ -1,0 +1,32 @@
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential ca-certificates curl pkg-config xz-utils \
+        libbz2-dev libffi-dev libgdbm-dev liblzma-dev libncursesw5-dev \
+        libreadline-dev libsqlite3-dev libssl-dev libzstd-dev uuid-dev zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /usr/src/python
+RUN curl --fail --show-error --silent --location \
+        --proto '=https' --tlsv1.2 \
+        https://www.python.org/ftp/python/3.15.2/Python-3.15.2.tar.xz \
+        --output /usr/src/Python-3.15.2.tar.xz \
+    && echo '8b5536d280142ecf6cdfe15d12a21ba1c65e300bbf7b28a8d0cdb849575797de  /usr/src/Python-3.15.2.tar.xz' | sha256sum --check --strict \
+    && tar --extract --xz --file /usr/src/Python-3.15.2.tar.xz --strip-components=1 \
+    && ./configure --prefix=/usr/local --enable-shared --without-ensurepip \
+    && make -j2 \
+    && make install \
+    && ldconfig
+
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8 AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates libbz2-1.0 libffi8 libgdbm6 liblzma5 libncursesw6 \
+        libreadline8 libsqlite3-0 libssl3 libuuid1 libzstd1 zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /usr/local/ /usr/local/
+RUN ldconfig \
+    && ln -s /usr/local/bin/python3 /usr/local/bin/python \
+    && python -c "import sys; assert sys.version_info[:3] == (3, 15, 2), sys.version; import ssl, ctypes, sqlite3, zlib, bz2, lzma, readline, uuid, dbm.gnu; from compression import zstd"
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+CMD ["python", "--version"]

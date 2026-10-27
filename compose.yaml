@@ -1,0 +1,36 @@
+services:
+  api:
+    image: api-logistik:0.1.0-dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ENVIRONMENT: "${ENVIRONMENT:-development}"
+      BIND_HOST: 0.0.0.0
+      PORT: "8000"
+      DOCS_ENABLED: "${DOCS_ENABLED:-}"
+      ORACLE_DSN: "${ORACLE_DSN:-}"
+      ORACLE_USER: "${ORACLE_USER:-}"
+      ORACLE_PASSWORD: "${ORACLE_PASSWORD:-}"
+      ORACLE_MODE: "${ORACLE_MODE:-thin}"
+      ORACLE_CLIENT_LIB_DIR: "${ORACLE_CLIENT_LIB_DIR:-}"
+      ORACLE_WALLET_DIR: "${ORACLE_WALLET_DIR:-}"
+      ORACLE_WALLET_PASSWORD: "${ORACLE_WALLET_PASSWORD:-}"
+      ORACLE_POOL_MIN: "${ORACLE_POOL_MIN:-1}"
+      ORACLE_POOL_MAX: "${ORACLE_POOL_MAX:-5}"
+      ORACLE_POOL_INCREMENT: "${ORACLE_POOL_INCREMENT:-1}"
+      ORACLE_POOL_WAIT_MS: "${ORACLE_POOL_WAIT_MS:-5000}"
+      ORACLE_CONNECT_TIMEOUT: "${ORACLE_CONNECT_TIMEOUT:-5}"
+      ORACLE_CALL_TIMEOUT_MS: "${ORACLE_CALL_TIMEOUT_MS:-5000}"
+    ports:
+      - "127.0.0.1:8000:8000"
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    stop_grace_period: 15s
