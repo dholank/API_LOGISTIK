@@ -1,111 +1,113 @@
 # API_LOGISTIK
 
-FastAPI untuk CRUD Oracle dan Global API Key yang dikelola Python. Source API, operator CLI, rotasi, SQL fresh-only, Docker, serta tes tersedia. Penerimaan production belum selesai: pengguna masih perlu menerapkan SQL, mengizinkan tes tulis sandbox, serta memverifikasi TLS eksternal, distribusi/scheduler, recovery dan p95. Status rinci ada di [acceptance](<docs/ACCEPTANCE.md>).
+REST API untuk CRUD data karyawan training, menggunakan FastAPI dan Oracle Database 19c Enterprise Edition. API berjalan di Docker; database berada di luar container.
 
-## Menjalankan API lokal
+Python menangani HTTP, validasi bentuk input, autentikasi Global API Key, dan transaksi. Function Oracle `F_CRUD_KARYAWAN_LOGISTIK` menangani validasi bisnis serta CRUD. Pembuatan, hashing SHA-256, dan rotasi API Key berlangsung di Python; Oracle menyimpan hash dan metadata key.
 
-Environment Windows pada workspace ini sudah terpasang. Konfigurasi privat yang sudah diisi tidak perlu ditimpa template. Untuk checkout baru, siapkan dependency terlebih dahulu seperti bagian setup di bawah; bila belum punya konfigurasi, gunakan [template tanpa credential](<.env.example>) dan isi secara lokal.
+## Status project
 
-```powershell
-.\.venv\Scripts\python.exe -m api_logistik
+API sudah berjalan dan lolos smoke test Docker di WSL2. Health check, dokumentasi HTTP, penolakan request tanpa key, serta stop/start container sudah diuji.
+
+Project belum siap production. Autentikasi, CRUD, dan rotasi Oracle live masih memerlukan verifikasi; TLS client, distribusi key, scheduler, recovery, dan pengukuran p95 juga belum selesai. Lihat [bukti pengujian dan batasnya](<docs/ACCEPTANCE.md>).
+
+## Menjalankan API di WSL2
+
+Gunakan Docker Engine dan Compose pada distro WSL2 yang sama. Python berjalan di image, sehingga host tidak memerlukan instalasi Python atau virtualenv Windows.
+
+### Konfigurasi
+
+Bila belum punya profil runtime, salin [template environment](<.env.example>) tanpa menimpa konfigurasi yang sudah ada:
+
+```bash
+cp --no-clobber .env.example .env
 ```
 
-- Liveness publik: <http://127.0.0.1:8000/api/v1/health/live>.
-- Swagger development: <http://127.0.0.1:8000/docs>.
-- POST `/api/v1/karyawan` dan GET/PUT/DELETE `/api/v1/karyawan/{id}` memerlukan `X-API-Key`.
-- Liveness tidak mengakses Oracle. Key tidak valid menghasilkan 401; backend auth tidak tersedia menghasilkan 503, tanpa melewati autentikasi.
-- Jangan mengharapkan CRUD berhasil sebelum schema, function, dan key siap. Startup tidak membuat tabel, memasang job, atau menerbitkan key.
+Isi konfigurasi tersebut secara lokal sebelum menjalankan API.
 
-Kontrak lengkap: [API](<docs/API.md>). Produksi memerlukan reverse proxy TLS dan backend yang tidak dipublikasikan secara langsung; HTTP loopback development bukan deployment TLS production.
+Untuk koneksi Oracle, isi `ORACLE_DSN`, `ORACLE_USER`, dan `ORACLE_PASSWORD` bersama-sama. DSN harus memakai TCPS. Jangan memasukkan credential atau API Key ke source, log, maupun perintah shell. [Aturan Git](<.gitignore>) dan [aturan konteks build](<.dockerignore>) mengecualikan konfigurasi privat, wallet, key, cache, serta tooling lokal.
 
-## SQL: pengguna menerapkan sendiri
+### Build dan jalankan
 
-Lihat [panduan SQL](<database/README.md>) sebelum memilih file. Jangan menjalankan seluruh folder otomatis. Pada schema kosong, source yang dibutuhkan mencakup:
+Jalankan dari root project:
 
-1. [T_KARYAWAN.sql](<database/schema/T_KARYAWAN.sql>) dan [F_CRUD_KARYAWAN_LOGISTIK.sql](<database/functions/F_CRUD_KARYAWAN_LOGISTIK.sql>), hanya jika objek bisnis belum ada.
-2. [T_API_KEY_AUTH.sql](<database/schema/T_API_KEY_AUTH.sql>) dan [T_API_KEY_ROTATION_STATE.sql](<database/schema/T_API_KEY_ROTATION_STATE.sql>), hanya jika belum ada.
-3. [D_INIT_API_KEY_ROTATION_STATE.sql](<database/seed/D_INIT_API_KEY_ROTATION_STATE.sql>) pada sesi setup khusus; hanya menambah GLOBAL yang hilang, bukan key.
-4. Precheck/verifikasi sesuai panduan. Patch GRACE legacy tidak dibutuhkan pada fresh schema.
-
-Function bisnis fresh memakai nama/signature tetap dan tidak mempunyai commit internal. File tersebut tidak memakai CREATE OR REPLACE, sehingga tidak menimpa function existing. DDL/seed belum dijalankan oleh agent. Pemeriksaan read-only terakhir pada Oracle 19.26/AL32UTF8 tidak menemukan keempat objek project melalui owned/visible objects maupun synonym. Jalankan kembali preflight setelah deployment:
-
-```powershell
-.\.venv\Scripts\api-logistik-preflight.exe
+```bash
+docker compose build api
+docker compose up --no-build --pull never --wait --wait-timeout 90
+docker compose ps
+curl --fail http://127.0.0.1:8000/api/v1/health/live
 ```
 
-Exit 2 berarti prasyarat schema belum lengkap, bukan koneksi otomatis di-bypass. Bukti SELECT/JSON Oracle read-only bukan bukti function telah dikompilasi atau CRUD/rollback live sudah lulus.
+- Swagger development: <http://127.0.0.1:8000/docs>
+- OpenAPI: <http://127.0.0.1:8000/openapi.json>
+- Health check: <http://127.0.0.1:8000/api/v1/health/live>
 
-## Provisioning dan rotasi
+Hentikan API dengan `docker compose stop`. Untuk menjalankannya kembali, ulangi perintah `up`. Setelah perubahan source, ulangi `build` lalu `up`.
 
-[Runbook operator](<docs/OPERATIONS.md>) menjelaskan private encrypted store, bootstrap prepare/confirm/activate, export ke file privat, immediate revoke, emergency replacement, tick dan rekonsiliasi. Jalankan operator dengan profil privat terpisah dan otorisasi OS/database yang sesuai:
+[Dockerfile](<Dockerfile>) memakai Python 3.15.2 dengan digest image terkunci. Versi dependency ada di [manifest](<pyproject.toml>) dan [lockfile](<uv.lock>). [Compose](<compose.yaml>) menjalankan container non-root dengan filesystem read-only dan port host terbatas pada `127.0.0.1:8000`.
 
-```powershell
-.\.venv\Scripts\api-logistik-keys.exe --help
+Status `healthy` hanya menandakan proses API hidup, bukan kesiapan Oracle atau CRUD. Startup tidak membuat tabel, menjalankan seed, atau menerbitkan API Key. Jangan menampilkan hasil `docker compose config` yang sudah diinterpolasi karena dapat memuat credential. Detail jaringan, TLS, dan alternatif build tersedia di [panduan operasi](<docs/OPERATIONS.md>).
+
+## Endpoint
+
+| Method | Path | Fungsi | API Key |
+|---|---|---|---|
+| POST | `/api/v1/karyawan` | Tambah karyawan | Wajib |
+| GET | `/api/v1/karyawan/{id}` | Ambil satu karyawan | Wajib |
+| PUT | `/api/v1/karyawan/{id}` | Ganti seluruh field karyawan | Wajib |
+| DELETE | `/api/v1/karyawan/{id}` | Hapus karyawan | Wajib |
+| GET | `/api/v1/health/live` | Periksa proses API | Tidak |
+
+Endpoint bisnis menerima key melalui header `X-API-Key`. Key tidak valid menghasilkan 401; kegagalan backend autentikasi menghasilkan 503, tanpa melewati autentikasi. Swagger dan OpenAPI aktif di development/test, tetapi nonaktif secara default di production.
+
+Bentuk input, contoh response, kode error, dan batas retry dijelaskan dalam [kontrak API](<docs/API.md>). Snapshot schema tersedia di [OpenAPI JSON](<docs/openapi.json>).
+
+## Menyiapkan Oracle dan API Key
+
+Pengguna menerapkan SQL secara manual setelah memeriksa target schema/PDB, objek existing, privilege, dan rencana pemulihan. Ikuti [panduan database](<database/README.md>); jangan menjalankan seluruh folder SQL otomatis. Source fresh-only bukan migrasi legacy atau izin menimpa objek existing.
+
+CRUD baru dapat digunakan setelah tabel, function, dan key siap. Function bisnis tidak melakukan commit internal; Python mengelola commit atau rollback.
+
+Global API Key digunakan bersama seluruh client. Key baru hanya boleh aktif setelah distribusinya dikonfirmasi untuk kandidat dan versi state yang tepat. Rotasi jatuh tempo 7 hari setelah aktivasi, dengan hard expiry pada hari ke-8. Grace key lama maksimal 24 jam dan tidak boleh melewati expiry aslinya. Key expired atau revoked tidak diaktifkan kembali.
+
+Provisioning, distribusi, revoke, dan rotasi memakai CLI operator dengan profil privat terpisah, bukan endpoint HTTP. Simpan master key, store terenkripsi, serta hasil ekspor key di luar project dengan permission privat. Scheduler tetap semi-otomatis selama distribusi dan konfirmasi client masih manual. Prosedurnya ada di [runbook operator](<docs/OPERATIONS.md#prosedur-cli-development>).
+
+## Pengujian
+
+Jalankan suite offline di Docker, tanpa jaringan atau credential Oracle:
+
+```bash
+docker build --target offline-tests -t api-logistik:offline-tests .
+docker run --rm --network none \
+  --user 10001:10001 --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=128m \
+  --cap-drop ALL --security-opt no-new-privileges \
+  api-logistik:offline-tests
 ```
 
-Key digenerate menggunakan secrets.token_urlsafe(32), hash SHA-256 hanya di Python, dan Oracle menyimpan hash/metadata. Key baru tidak aktif sebelum distribusi dikonfirmasi untuk kandidat+VERSION yang tepat. Masa nominal 7 hari, hard expiry hari ke-8; grace lama min(expiry asli, aktivasi baru+24 jam). Tidak ada revival key expired/revoked atau endpoint publik untuk mengembalikan key baru.
+Untuk lint, format, dan type-check, gunakan image tes yang sama:
 
-Scheduler eksternal memanggil CLI setiap menit, bukan setiap worker API. Rotasi tetap semi-otomatis selama delivery/konfirmasi client masih manual. Error dan blocking menghasilkan audit/exit code untuk dipantau; delivery alert dan scheduler aktual tetap perlu disiapkan serta diuji oleh operator.
-
-Master key, ciphertext store dan export plaintext harus berada di luar project dengan permission privat. CLI menolak lokasi di dalam project; pemeriksaan ACL/ancestor Windows juga dapat menolak folder shared. Jangan melonggarkan ACL host secara global untuk memaksa provisioning berhasil. Profil API tidak memerlukan writer credential atau master key. Compose meneruskan whitelist environment API saja.
-
-## Tes dan kualitas
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q --cov=api_logistik --cov-report=term-missing
-.\.venv\Scripts\ruff.exe check src scripts tests
-.\.venv\Scripts\ruff.exe format --check src scripts tests
-.\.venv\Scripts\mypy.exe src\api_logistik
-.\.venv\Scripts\python.exe scripts\export_openapi.py
+```bash
+docker run --rm --network none \
+  --user 10001:10001 --read-only \
+  --tmpfs /tmp:rw,noexec,nosuid,size=128m \
+  --cap-drop ALL --security-opt no-new-privileges \
+  --env RUFF_CACHE_DIR=/tmp/ruff \
+  api-logistik:offline-tests sh -c \
+  'ruff check src scripts tests && ruff format --check src scripts tests && mypy --cache-dir=/tmp/mypy src/api_logistik'
 ```
 
-Default pytest mengecualikan integration dan tidak membutuhkan credential/network Oracle. [Tes integrasi](<tests/integration/test_oracle_readonly.py>) memerlukan opt-in dan profil privat eksternal eksplisit; [tes tulis](<tests/integration/test_oracle_isolated_writes.py>) menambahkan acknowledgement sandbox terisolasi kosong dan cleanup hanya fixture. Jangan mengaktifkan flag tersebut pada schema operasional. Collection/skip bukan live PASS.
+Hasil WSL2 pada 27 Oktober 2026: 336 tes lulus, 2 tes khusus Windows dilewati, 5 tes integrasi tidak dijalankan, dan coverage 85%. Lint, format, serta mypy Linux lulus; target mypy `win32` juga lulus secara statis dari Linux. Suite masih menampilkan satu warning deprecation TestClient/httpx.
 
-[OpenAPI export](<scripts/export_openapi.py>) memakai konfigurasi test eksplisit tanpa dotenv atau acquire pool. Hasil ekspor tersedia sebagai [openapi.json](<docs/openapi.json>). Installed TestClient saat ini masih memberi satu deprecation warning tentang httpx; warning tidak disembunyikan dan bukan kegagalan runtime.
+Tes integrasi Oracle memerlukan opt-in, target sandbox, profil privat eksternal, fixture, dan izin terpisah. Hasil offline tidak membuktikan koneksi, CRUD, transaksi, atau rotasi Oracle live. Rincian ada di [acceptance](<docs/ACCEPTANCE.md>).
 
-Pada runner Windows ini, TEMP diarahkan ke checkout: 16 kasus kebijakan lokasi private dilewati karena precondition lokasi eksternal tidak tersedia. Jangan mematikan guard agar lolos. Suite Linux Docker final menjalankan kasus tersebut: **334 passed, 2 Windows-only skips, 5 integration deselected**, coverage 85%. Suite Windows final: 318 passed dan 18 skips. Lint/format dan mypy 27 source files lulus.
+## Dokumentasi
 
-Jalankan suite Linux tanpa jaringan/database, memakai runtime source-build di bagian berikut:
-
-```powershell
-docker build --target offline-tests --build-arg PYTHON_IMAGE=api-logistik/python:3.15.2 -t api-logistik:offline-tests .
-docker run --rm --network none --user 10001:10001 --read-only --tmpfs /tmp:rw,noexec,nosuid,size=128m --cap-drop ALL --security-opt no-new-privileges api-logistik:offline-tests
-```
-
-## Docker
-
-Jalur image resmi `python:3.15.2-slim` belum tersedia pada pemeriksaan registry. Build alternatif yang tetap memakai Python 3.15.2:
-
-```powershell
-docker build -f Dockerfile.python-runtime -t api-logistik/python:3.15.2 .
-docker build --build-arg PYTHON_IMAGE=api-logistik/python:3.15.2 -t api-logistik:0.1.0-dev .
-docker compose up --no-build
-```
-
-[Runtime source-build](<Dockerfile.python-runtime>) memakai source Python resmi ber-checksum dan Debian ber-digest; compiler hanya di builder, bukan host. [Dockerfile aplikasi](<Dockerfile>) memasang wheel non-editable, memeriksa versi tepat, dan memakai UID/GID 10001. [Compose](<compose.yaml>) mempublikasikan loopback 8000, root filesystem read-only, tmpfs, cap-drop dan no-new-privileges. Jangan memakai default Compose rebuild setelah memilih runtime lokal; gunakan `--no-build`. Detail dan batas reproducibility/TLS ada di [operasi](<docs/OPERATIONS.md>).
-
-## Setup dependency dari checkout baru (Windows)
-
-Pin runtime/tool: Python 3.15.2 dan uv 0.13.5. [Manifest](<pyproject.toml>), [pin Python](<.python-version>) dan [lockfile](<uv.lock>) mengunci runtime/dependency termasuk FastAPI 0.162.0, Pydantic 2.14.1, oracledb 26.0.1. Gunakan Python Install Manager yang mendukung target extraction; Python bootstrap hanya dipakai untuk memasang uv terisolasi.
-
-```powershell
-py -3 -m venv .tools\uv
-.\.tools\uv\Scripts\python.exe -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --no-cache-dir --only-binary=:all: uv==0.13.5
-py install --yes --target=.\.tools\python-3.15.2 3.15.2
-.\.tools\uv\Scripts\uv.exe --cache-dir .cache\uv sync --locked --python .\.tools\python-3.15.2\python.exe --no-python-downloads --default-index https://pypi.org/simple
-.\.venv\Scripts\python.exe scripts\check_environment.py
-```
-
-Untuk workspace yang sudah terpasang cukup sync terakhir bila diperlukan; jangan bootstrap ulang di atas folder terpakai. Runtime target extraction tidak mengganti Python global; jangan memindahkannya selama virtualenv masih menggunakannya. Cache lokal menghindari cache uv global yang menolak akses pada mesin ini; tidak ada ACL global yang diubah. [Git ignore](<.gitignore>) dan [Docker ignore](<.dockerignore>) mengecualikan env privat, wallet, tooling/cache dan virtualenv.
-
-## Isi repository publik
-
-Repository menyertakan source API/CLI, SQL, tes, dokumentasi, template environment tanpa credential, serta manifest dan lockfile. Instruksi agent lokal, output Graphify, environment Python, cache, hasil tes, konfigurasi privat, wallet/key, metadata editor dan `:Zone.Identifier` tidak dipublikasikan. File lokal yang masih diperlukan tetap disimpan, tetapi diabaikan Git dan konteks build Docker.
-
-Aturan pengecualian mengikuti [dokumentasi Git](<https://git-scm.com/docs/gitignore>). Target `offline-tests` tidak bergantung pada instruksi agent lokal agar checkout publik dapat menyediakan semua sumber `COPY`, sesuai [aturan Docker CopyIgnoredFile](<https://docs.docker.com/reference/build-checks/copy-ignored-file/>). Pengecualian file bukan pengganti audit secret sebelum commit atau push.
-
-## Acuan
-
-[PRD](<docs/PRD.md>) · [Arsitektur](<docs/ARCHITECTURE.md>) · [Rencana tiga milestone](<docs/IMPLEMENTATION_PLAN.md>) · [API](<docs/API.md>) · [Operasi](<docs/OPERATIONS.md>) · [Acceptance](<docs/ACCEPTANCE.md>).
-
-Kesesuaian teknologi diperiksa melalui Context7 dan sumber resmi: [Python 3.15.2](https://www.python.org/downloads/release/python-3152/), [python-oracledb](https://github.com/oracle/python-oracledb/blob/main/README.md), [FastAPI](https://fastapi.tiangolo.com/), [Pydantic settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/).
+| Dokumen | Isi |
+|---|---|
+| [PRD](<docs/PRD.md>) | Requirement, batas scope, dan registry objek SQL |
+| [Arsitektur](<docs/ARCHITECTURE.md>) | Tanggung jawab modul dan alur transaksi |
+| [Rencana implementasi](<docs/IMPLEMENTATION_PLAN.md>) | Milestone dan gate penerimaan |
+| [Kontrak API](<docs/API.md>) | Endpoint, input, response, dan error |
+| [Panduan database](<database/README.md>) | Preflight dan penerapan SQL manual |
+| [Operasi](<docs/OPERATIONS.md>) | Konfigurasi, CLI operator, rotasi, dan recovery |
+| [Acceptance](<docs/ACCEPTANCE.md>) | Bukti pengujian dan pekerjaan yang belum selesai |

@@ -206,6 +206,37 @@ class SecretStoreTests(unittest.TestCase):
                 self.store.export(digest, destination)
         self.assertEqual(destination.read_bytes(), b"")
 
+    @unittest.skipIf(os.name == "nt", "POSIX platform dispatch")
+    def test_posix_secret_operations_never_call_windows_helpers(self):
+        from api_logistik.security import secret_store
+
+        path = self.base / "posix-master.key"
+        destination = self.base / "posix-export.key"
+        with (
+            patch.object(secret_store, "_windows_sid", side_effect=AssertionError("Windows SID")),
+            patch.object(
+                secret_store, "_check_windows_acl", side_effect=AssertionError("Windows ACL")
+            ),
+        ):
+            init_encryption_key(path)
+            self.assertEqual(read_encryption_key(path), path.read_bytes())
+            digest = self.store.put(self.raw)
+            self.store.export(digest, destination)
+        self.assertEqual(destination.read_text(), self.raw)
+        self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+    @unittest.skipIf(os.name == "nt", "POSIX rejects Windows-only ACL calls")
+    def test_windows_acl_helper_rejects_posix_before_loading_libraries(self):
+        import ctypes
+
+        from api_logistik.security import secret_store
+
+        with patch.object(ctypes, "WinDLL", create=True) as load_library:
+            with self.assertRaises(SecretStoreError):
+                secret_store._check_windows_acl(self.base, private=True)
+        load_library.assert_not_called()
+
     @unittest.skipIf(os.name == "nt", "POSIX permission validation")
     def test_untrusted_directory_rejected(self):
         unsafe = self.base / "unsafe"

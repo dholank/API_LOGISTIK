@@ -33,7 +33,7 @@ def _windows_sid() -> str:
 
 
 def _restrict(path: Path) -> None:
-    if os.name == "nt":
+    if sys.platform == "win32":
         sid = _windows_sid()
         subprocess.run(
             ["icacls.exe", str(path), "/inheritance:r", "/grant:r", f"*{sid}:(F)"],
@@ -46,6 +46,9 @@ def _restrict(path: Path) -> None:
 
 
 def _check_windows_acl(path: Path, *, private: bool) -> None:
+    if sys.platform != "win32":
+        raise SecretStoreError()
+
     import ctypes
     from ctypes import wintypes
 
@@ -122,7 +125,7 @@ def _check_directory(path: Path, *, private: bool = False) -> None:
     info = path.stat()
     if not stat.S_ISDIR(info.st_mode):
         raise SecretStoreError()
-    if os.name == "nt":
+    if sys.platform == "win32":
         _check_windows_acl(path, private=private)
     else:
         if info.st_uid not in {0, _current_uid()}:
@@ -136,7 +139,7 @@ def _check_directory(path: Path, *, private: bool = False) -> None:
 def _prepare_directory(path: Path, *, create: bool, private: bool) -> Path:
     if ".." in Path(path).parts:
         raise SecretStoreError()
-    if os.name == "nt" and os.path.isreserved(path):
+    if sys.platform == "win32" and os.path.isreserved(path):
         raise SecretStoreError()
     path = Path(os.path.abspath(path))
     missing = []
@@ -164,7 +167,7 @@ def _prepare_directory(path: Path, *, create: bool, private: bool) -> Path:
 def _private_write(destination: Path, payload: bytes) -> None:
     if ".." in Path(destination).parts:
         raise SecretStoreError()
-    if os.name == "nt" and os.path.isreserved(destination):
+    if sys.platform == "win32" and os.path.isreserved(destination):
         raise SecretStoreError()
     destination = Path(os.path.abspath(destination))
     _prepare_directory(destination.parent, create=False, private=False)
@@ -189,7 +192,7 @@ def _private_write(destination: Path, payload: bytes) -> None:
 
 
 def _sync_directory(path: Path) -> None:
-    if os.name != "nt":
+    if sys.platform != "win32":
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
         try:
             os.fsync(fd)
@@ -206,14 +209,14 @@ def init_encryption_key(destination: Path) -> None:
 
 def read_encryption_key(path: Path) -> bytes:
     try:
-        if ".." in Path(path).parts or (os.name == "nt" and os.path.isreserved(path)):
+        if ".." in Path(path).parts or (sys.platform == "win32" and os.path.isreserved(path)):
             raise SecretStoreError()
         path = Path(os.path.abspath(path))
         _prepare_directory(path.parent, create=False, private=False)
         info = path.lstat()
         if not stat.S_ISREG(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
             raise SecretStoreError()
-        if os.name == "nt":
+        if sys.platform == "win32":
             _check_windows_acl(path, private=True)
         elif info.st_uid != _current_uid() or stat.S_IMODE(info.st_mode) != 0o600:
             raise SecretStoreError()
@@ -300,7 +303,7 @@ class EncryptedFileSecretStore:
         try:
             if ".." in Path(destination).parts:
                 raise SecretStoreError()
-            if os.name == "nt" and os.path.isreserved(destination):
+            if sys.platform == "win32" and os.path.isreserved(destination):
                 raise SecretStoreError()
             target = Path(os.path.abspath(destination))
             if target == self.root or self.root in target.parents:

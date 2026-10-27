@@ -1,4 +1,4 @@
-ARG PYTHON_IMAGE=python:3.15.2-slim
+ARG PYTHON_IMAGE=python:3.15.2-slim@sha256:197f6622a70b727a4e61bdac13a73b4e2b914b896aa5a729ceb1f45a09bde5fa
 FROM ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff AS uv
 FROM ${PYTHON_IMAGE} AS python-base
 RUN python -c "import sys; assert sys.version_info[:3] == (3, 15, 2), sys.version"

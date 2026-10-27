@@ -4,13 +4,31 @@ Status: panduan konfigurasi dan prosedur operator, bukan bukti deployment. Tidak
 
 ## Artefak dan batas deployment
 
-[Dockerfile](<../Dockerfile>) mengunci Python `3.15.2-slim` dan uv `0.13.5`, menginstal package normal melalui wheel dengan `uv sync --locked --no-dev --no-editable --no-python-downloads`, lalu menyalin virtualenv saja ke runtime. Hatchling `1.32.4` serta dependency runtime berasal dari [manifest](<../pyproject.toml>) dan [lockfile](<../uv.lock>): FastAPI 0.162.0, Pydantic 2.14.1, python-oracledb 26.0.1, Uvicorn 0.54.0. Tidak ada editable install atau source bind mount pada image rilis. Runtime UID/GID 10001:10001; source, uv, dev tools dan SQL tidak disalin ke stage akhir.
+[Dockerfile](<../Dockerfile>) mengunci Python `3.15.2-slim` dengan digest OCI index `sha256:197f6622a70b727a4e61bdac13a73b4e2b914b896aa5a729ceb1f45a09bde5fa` dan uv `0.13.5`, menginstal package normal melalui wheel dengan `uv sync --locked --no-dev --no-editable --no-python-downloads`, lalu menyalin virtualenv saja ke runtime. Hatchling `1.32.4` serta dependency runtime berasal dari [manifest](<../pyproject.toml>) dan [lockfile](<../uv.lock>): FastAPI 0.162.0, Pydantic 2.14.1, python-oracledb 26.0.1, Uvicorn 0.54.0. Tidak ada editable install atau source bind mount pada image rilis. Runtime UID/GID 10001:10001; source, uv, dev tools dan SQL tidak disalin ke stage akhir.
 
 Pemeriksaan registry read-only pada 26 Oktober 2026 menemukan:
 
 - `ghcr.io/astral-sh/uv:0.13.5` tersedia; digest OCI index terverifikasi `sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff`, mencakup Linux amd64/arm64. Dockerfile memakai tag+digest ini.
 - `docker.io/library/python:3.15.2-slim` mengembalikan `not found` melalui `docker manifest inspect` dan `docker buildx imagetools inspect`. Default tag tetap dipertahankan sesuai versi terkunci; jalur official image belum tersedia. Tidak ada digest Python yang dikarang atau downgrade otomatis.
 - Base alternatif `debian:bookworm-slim` tersedia; digest OCI index terverifikasi `sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8` dipakai pada kedua stage [runtime source-build](<../Dockerfile.python-runtime>).
+
+### Jalur default WSL2, pemeriksaan 27 Oktober 2026
+
+Image resmi Python 3.15.2 kini tersedia. Pemeriksaan `docker buildx imagetools inspect python:3.15.2-slim` mengembalikan digest OCI index di atas. Default Dockerfile beralih ke tag+digest tersebut, tanpa mengubah versi Python atau lockfile. Pin digest mengikuti [panduan Docker](<https://docs.docker.com/build/building/best-practices/#pin-base-image-versions>); pembaruan digest berikutnya memerlukan review dan pengujian ulang.
+
+Docker Engine berjalan pada distro Ubuntu WSL2 yang sama, melalui context `default` dan socket Unix lokal. Perintah dari root project:
+
+```bash
+docker compose --env-file /dev/null config --no-interpolate --no-env-resolution --quiet
+docker compose build api
+docker compose up --no-build --pull never --wait --wait-timeout 90
+docker compose ps
+curl --fail http://127.0.0.1:8000/api/v1/health/live
+```
+
+Validasi config memakai profil kosong Linux dan tidak merender credential. Build/start memakai whitelist profil privat Compose yang sudah tersedia, bukan menyalinnya ke image. `--wait` menunggu healthcheck, sedangkan `--no-build --pull never` menjalankan image lokal yang baru dibangun, sesuai [referensi Compose up](<https://docs.docker.com/reference/cli/docker/compose/up/>). Virtualenv Windows hasil pemindahan tidak dipakai pada jalur ini. Gunakan `docker compose stop` untuk menghentikan API; ulangi `up` untuk memulai, atau `build` lalu `up` setelah source berubah. Restart policy tetap `unless-stopped`.
+
+Perubahan ini hanya setup API lokal. Liveness, HTTP development dan tes offline tidak membuktikan auth/CRUD Oracle, persistensi key, TLS client, scheduler atau readiness production. Bukti WSL2 dicatat terpisah pada [acceptance](<ACCEPTANCE.md>).
 
 ### Alternatif eksplisit: compile Python versi yang sama di Docker
 
@@ -119,6 +137,14 @@ Lima tes integrasi baru hanya dikoleksi/skip offline, belum dijalankan live. Jal
 Log request hanya memuat metadata allowlist dan route pattern, bukan header/body/query atau ID mentah. Raw Uvicorn access logger dimatikan. Formatter menolak nama event bebas; exception/trace/object tidak dirender. Hook thread dan unraisable dipasang saat konfigurasi logging, bukan saat import, dan hanya menghasilkan event konstan. Uji thread/unraisable nyata dalam container membuktikan canary tidak tercetak.
 
 Run awal menemukan error background close python-oracledb 26.0.1 ketika koneksi/network ditutup, diikuti StopIteration. Sanitasi hook mencegah raw traceback; ini bukan patch driver atau bukti penyebab jaringan sudah hilang. Pantau event background_thread_failed, periksa backend/pool dan restart terkontrol bila terjadi saat operasi. Jangan menggunakan cache/bypass atau mengulang mutasi dengan commit outcome unknown. Dokumentasi hook: [threading](<https://docs.python.org/3.15/library/threading.html#threading.excepthook>) dan [unraisable](<https://docs.python.org/3.15/library/sys.html#sys.unraisablehook>).
+
+## Pemeriksaan platform secret store
+
+Pada WSL2 dan container Linux, [secret store](<../src/api_logistik/security/secret_store.py>) memakai permission POSIX: direktori privat 0700, material key/export 0600, serta pemeriksaan owner, ancestor dan symlink. Guard platform menggunakan `sys.platform == "win32"` untuk membatasi API Windows, bukan mencoba menjalankan utilitas Windows yang mungkin tersedia lewat WSL interop. Pemanggilan helper ACL Windows pada POSIX ditolak dengan error terkontrol sebelum library Windows dimuat.
+
+Guard ini mengikuti [dukungan platform checks mypy](<https://mypy.readthedocs.io/en/stable/common_issues.html#python-version-and-system-platform-checks>), dengan mypy 2.4.0 dan Python 3.15.2 sesuai lockfile. [ctypes.WinDLL](<https://docs.python.org/3.15/library/ctypes.html#ctypes.WinDLL>) dan [os.path.isreserved](<https://docs.python.org/3.15/library/os.path.html#os.path.isreserved>) hanya tersedia pada Windows; [sys.platform](<https://docs.python.org/3.15/library/sys.html#sys.platform>) pada Linux adalah `linux`, termasuk proses Python Linux di WSL2. Tidak ada `type: ignore`, penonaktifan error `attr-defined`, atau perubahan kebijakan ACL/permission untuk meloloskan type-check.
+
+Jalankan mypy default di image tes Linux. Pemeriksaan tambahan `mypy --platform win32` memeriksa cabang Windows secara statis, bukan menggantikan tes ACL pada host Windows asli. Tes fixture Linux tetap offline dan tidak memakai secret store operator atau Oracle nyata.
 
 ## Referensi keputusan
 

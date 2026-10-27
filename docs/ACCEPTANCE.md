@@ -1,8 +1,27 @@
 # Status penerimaan API_LOGISTIK
 
-Acuan: [PRD](<PRD.md>) bagian 4, 10, 11 dan 12. Snapshot 26 Oktober 2026 ini mencatat bukti parent dan pemeriksaan dokumentasi secara terpisah. Project belum seluruhnya PASS. `SOURCE` berarti tersedia tanpa bukti runtime; `NOT RUN` berarti belum diuji pada tingkat gate tersebut; `BLOCKED` berarti prasyarat konkret belum tersedia. PASS offline/build tidak menjadi PASS Oracle live atau production.
+Acuan: [PRD](<PRD.md>) bagian 4, 10, 11 dan 12. Snapshot awal 26 Oktober 2026 mencatat bukti parent dan pemeriksaan dokumentasi secara terpisah. Pembaruan deployment WSL2 pada 27 Oktober 2026 dicatat di bagian berikut tanpa menggantikan batas bukti lama. Project belum seluruhnya PASS. `SOURCE` berarti tersedia tanpa bukti runtime; `NOT RUN` berarti belum diuji pada tingkat gate tersebut; `BLOCKED` berarti prasyarat konkret belum tersedia. PASS offline/build tidak menjadi PASS Oracle live atau production.
 
-## Bukti aktual dan batas
+## Deployment WSL2, 27 Oktober 2026 (Asia/Jakarta)
+
+Target: Ubuntu 24.04.5 WSL2, Linux amd64; Docker Engine 29.9.2, Compose v5.6.1, Buildx v0.38.1 pada distro yang sama. Perubahan meliputi pin base image resmi, petunjuk deployment, dan perbaikan guard platform secret store. Versi Python/dependency, SQL, business logic dan kebijakan permission/ACL tidak diubah.
+
+| Pemeriksaan aktual | Hasil | Batas |
+|---|---|---|
+| Registry resmi Python | PASS: `python:3.15.2-slim` tersedia; digest OCI index `sha256:197f6622a70b727a4e61bdac13a73b4e2b914b896aa5a729ceb1f45a09bde5fa` dikunci pada Dockerfile | Menggantikan kondisi registry pada snapshot 26 Oktober; bukan bukti audit supply chain lengkap |
+| Compose config dan build API | PASS: validasi memakai `/dev/null`, build `uv sync --locked --no-dev --no-editable --no-python-downloads`, runtime Python 3.15.2 | Profil privat tidak dicetak; tidak memakai virtualenv Windows |
+| Container lokal | PASS: healthy, UID/GID10001, root filesystem read-only, cap-drop ALL, no-new-privileges, hanya `127.0.0.1:8000`, tanpa bind mount | HTTP development; bukan TLS atau production readiness |
+| HTTP dan stop/start | PASS: health/docs/OpenAPI 200, empat method bisnis tanpa key 401, header malformed 401, unknown route 404; setelah stop/start tiga endpoint publik kembali 200 | Swagger hanya HTTP HTML/schema, bukan klik browser; tidak mengirim key valid atau membuka koneksi Oracle |
+| Suite offline pada base resmi setelah perbaikan mypy | PASS: 336 passed, 2 Windows-only skips, 5 integration deselected, 9 subtests passed; coverage 85%; satu warning deprecation TestClient/httpx | Dua regresi baru membuktikan operasi POSIX tidak memanggil helper Windows dan helper ACL menolak POSIX sebelum memuat DLL; network none/read-only/nonroot, bukan Oracle live |
+| Lint/format setelah perbaikan | PASS: ruff check src/scripts/tests; 47 file sudah sesuai format | Source berubah hanya pada guard platform dan tes regresinya |
+| Mypy Linux dan target Windows | PASS: mypy 2.4.0 default Linux serta `--platform win32`, masing-masing tanpa issue pada 27 source files | Enam diagnostic `attr-defined` yang ditemukan saat setup awal ditutup dengan guard `sys.platform`, bukan suppression. Target Windows hanya pemeriksaan statis dari Linux, bukan tes ACL Windows asli |
+| Environment dan log | PASS: environment container cocok dengan whitelist Compose; setting operator/master/store tidak diteruskan; scan log di memori tidak menemukan nilai profil privat atau sentinel header malformed | Pemeriksaan terbatas, bukan sertifikasi tidak ada secret di semua artefak |
+
+Setelah perbaikan mypy, image API dibangun ulang dan container direkreasi: healthy, health/docs/OpenAPI 200, dan empat method bisnis tanpa key 401. SHA-256 source secret store yang terpasang di container cocok dengan source perbaikan; scan log di memori tidak menemukan nilai profil privat atau traceback.
+
+Tidak ada DDL, DML, provisioning/rotasi key, preflight atau tes Oracle live yang dijalankan pada setup ini. Seluruh gate Oracle, TLS, distribusi/scheduler, persistence key dan p95 tetap terbuka. Container dibiarkan berjalan untuk development; perubahan setup ini belum otomatis di-commit atau di-push.
+
+## Bukti historis 26 Oktober 2026 dan batas
 
 | Pemeriksaan | Hasil | Batas |
 |---|---|---|
