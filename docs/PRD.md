@@ -1,26 +1,27 @@
 # API_LOGISTIK: Product Requirements Document (PRD)
 ## REST API Integration: FastAPI, Oracle Database & Docker
 
-**Versi:** 1.2, implementasi Global API Key Python dan source bisnis fresh-only  
-**Tanggal:** 26 Oktober 2026  
-**Status:** Source implementasi tersedia; acceptance Oracle tulis dan production belum selesai  
-**Environment awal:** Development / Training  
-**Target Python:** Rilis stabil terbaru, diverifikasi dan dikunci sebelum setup implementasi.  
+**Versi:** 1.3, tambahan fixture dummy karyawan manual yang disetujui
+
+**Tanggal:** 27 Oktober 2026
+
+**Status:** Bootstrap key dan CRUD HTTP live pada fixture berizin sudah diuji; penerimaan production belum selesai.
+
+**Environment awal:** Development / Training. Target pengguna saat ini adalah FreeSQL dengan Oracle 19.26/AL32UTF8, sesuai [bukti pengujian](<ACCEPTANCE.md>).
+
+**Target Python:** Rilis stabil terbaru pada saat setup, diverifikasi lalu dikunci.
+
 **Target database:** Oracle Database 19c Enterprise Edition.
 
----
+Requirement dalam PRD ini tetap berlaku meskipun sebagian pengujian telah lulus. [Acceptance](<ACCEPTANCE.md>) mencatat metode, hasil, dan batas bukti: 343 tes offline lulus, bootstrap key ID 1 dari VERSION 0 ke 3, serta 24 pemeriksaan HTTP live. Fixture sementara 91991 sudah dihapus; 10 dummy 90001 sampai 90010 tetap utuh. Rotasi/grace, concurrency, outage, restart dengan key aktif, TLS client, dan p95 belum membuktikan kesiapan production.
 
 ## 1. Project Overview
 
 ### 1.1 Background
 
-Project ini bertujuan membangun REST API menggunakan FastAPI sebagai penghubung antara client application dan Oracle Database.
+API menghubungkan client dengan Oracle melalui FastAPI di Docker. Tabel `KARYAWAN` menjadi data training untuk development.
 
-Business logic, validasi data bisnis, dan CRUD dijalankan menggunakan Oracle PL/SQL Function. FastAPI menerima request, menjalankan autentikasi Global API Key di Python, memanggil function CRUD Oracle, dan mengembalikan JSON. Generasi, hashing, validasi, serta rotasi key seluruhnya di Python; Oracle hanya menyimpan metadata/hash dan menyediakan transaksi SQL biasa untuk autentikasi.
-
-Aplikasi FastAPI dijalankan di dalam Docker Container untuk mempermudah deployment dan pengelolaan environment.
-
-Pada tahap development, sistem menggunakan tabel `KARYAWAN` sebagai data training.
+Python menerima request, mengautentikasi Global API Key, memanggil function bisnis, dan mengembalikan JSON. Function PL/SQL menangani validasi bisnis serta CRUD. Pembuatan, hashing, validasi, dan rotasi key seluruhnya di Python; Oracle hanya menyimpan hash/metadata key dan menyediakan transaksi SQL biasa.
 
 ### 1.2 Objectives
 
@@ -34,7 +35,7 @@ Pada tahap development, sistem menggunakan tabel `KARYAWAN` sebagai data trainin
 
 ## 2. Scope
 
-### 2.1 In Scope — MVP
+### 2.1 In Scope: MVP
 
 - FastAPI REST API.
 - Integrasi Oracle Database menggunakan Python driver.
@@ -47,7 +48,7 @@ Pada tahap development, sistem menggunakan tabel `KARYAWAN` sebagai data trainin
 - Swagger/OpenAPI untuk testing development.
 - Logging, error handling, dan pengujian API.
 
-### 2.2 Out of Scope — MVP
+### 2.2 Out of Scope: MVP
 
 - Integrasi langsung ke tabel production operasional.
 - Aplikasi frontend khusus.
@@ -111,7 +112,9 @@ Empat endpoint CRUD menggunakan satu Oracle Function dengan parameter mode berbe
 
 ### 5.1 Contoh CREATE Request
 
-**Endpoint:** `POST /api/v1/karyawan`
+Contoh berikut memakai data sintetis, bukan data pegawai atau izin menulis Oracle.
+
+Endpoint: `POST /api/v1/karyawan`.
 
 Header:
 
@@ -179,7 +182,7 @@ Kode error digunakan untuk identifikasi teknis. Client dapat menampilkan `messag
 
 **Table:** `KARYAWAN`
 
-| Column | Data Type Rencana | Description |
+| Column | Data Type Fresh Schema | Description |
 |---|---|---|
 | ID_KARYAWAN | NUMBER(5) | Primary Key dan NOT NULL |
 | NAMA | VARCHAR2(50 BYTE) | Nama karyawan |
@@ -187,17 +190,15 @@ Kode error digunakan untuk identifikasi teknis. Client dapat menampilkan `messag
 | NO_TELP | VARCHAR2(20 BYTE) | Nomor telepon |
 | STATUS | VARCHAR2(10 BYTE) | Status karyawan, tanpa enum tambahan |
 
-Ini target fresh schema sesuai registry dan [source tabel](<../database/schema/T_KARYAWAN.sql>) yang disetujui pengguna pada 26 Oktober 2026. Metadata live terakhir belum menemukan tabel tersebut; tabel existing tidak boleh diubah otomatis. Transport ID API berupa string digit ASCII, bind function berupa NUMBER, dan response dinormalisasi tanpa nol depan. `NO_TELP` tetap teks agar nol depan tidak hilang. Charset target byte-validation adalah AL32UTF8, terkonfirmasi pada koneksi read-only.
+Struktur fresh schema mengikuti registry dan [source tabel](<../database/schema/T_KARYAWAN.sql>) yang disetujui pada 26 Oktober 2026. Tabel kini terlihat VALID pada target pengguna; hasil itu tidak memberi izin mengubah tabel existing otomatis. ID API berupa string digit ASCII, bind function berupa NUMBER, dan ID response tanpa nol depan. `NO_TELP` tetap teks agar nol depan tidak hilang. Validasi byte memakai charset AL32UTF8 yang terkonfirmasi pada target.
 
 ### 6.2 CRUD Function
 
-Nama function yang diusulkan:
-
-`F_CRUD_KARYAWAN_LOGISTIK`
+Function bisnis tetap `F_CRUD_KARYAWAN_LOGISTIK`, dengan signature kanonis pada bagian 15.3.
 
 Input:
 
-- `P_MODE` — CREATE, READ, UPDATE, DELETE.
+- `P_MODE`: CREATE, READ, UPDATE, DELETE.
 - `P_ID_KARYAWAN`.
 - `P_NAMA`.
 - `P_CABANG`.
@@ -303,7 +304,7 @@ API_logistik/
 └── README.md
 ```
 
-Diagram di atas adalah struktur target, bukan daftar implementasi yang sudah selesai. Detail tanggung jawab modul berada di [ARCHITECTURE.md](<ARCHITECTURE.md>), dan tahapan pengerjaan di [IMPLEMENTATION_PLAN.md](<IMPLEMENTATION_PLAN.md>). Setiap package Python menggunakan `__init__.py` saat mulai diimplementasikan. Dependency dikelola melalui `pyproject.toml` dan satu lockfile dari tool yang disepakati, bukan beberapa daftar versi yang dirawat manual.
+Tree ini menunjukkan struktur target, bukan status penerimaan fitur. [Arsitektur](<ARCHITECTURE.md>) menjelaskan tanggung jawab modul; [rencana implementasi](<IMPLEMENTATION_PLAN.md>) menjelaskan tahap pengerjaan. Setiap package Python memiliki file inisialisasi saat diimplementasikan. Dependency mengikuti [manifest](<../pyproject.toml>) dan satu [lockfile](<../uv.lock>), bukan daftar versi manual yang terpisah.
 
 Konfigurasi koneksi Oracle dibaca dari environment variables atau Docker Secrets, bukan hardcoded dalam image.
 
@@ -314,7 +315,7 @@ Persyaratan Docker:
 - Connection pooling diaktifkan dan ukurannya dapat dikonfigurasi.
 - Container memiliki health check.
 - Log dikirim ke standard output/error.
-- Secret tidak disimpan dalam Dockerfile atau repository.
+- Secret tidak disimpan dalam [Dockerfile](<../Dockerfile>) atau repository.
 - Versi dependency ditetapkan dan dipindai sebelum deployment.
 
 ## 9. Validation Requirements
@@ -354,7 +355,7 @@ Target performance merupakan target awal yang perlu diuji melalui benchmarking, 
 
 ## 11. Acceptance Criteria
 
-Project MVP dianggap selesai apabila:
+Enam belas kriteria berikut adalah requirement penerimaan akhir, bukan daftar hasil tes. Bukti yang sudah tersedia dan gate yang masih terbuka dicatat pada [acceptance](<ACCEPTANCE.md>). MVP selesai setelah seluruh kriteria terpenuhi dan pengguna memberi sign-off:
 
 - [ ] FastAPI berjalan stabil melalui Docker.
 - [ ] FastAPI berhasil terhubung ke Oracle Development Database.
@@ -381,7 +382,7 @@ Project MVP dianggap selesai apabila:
 | M2 Rotation Engine/manual/emergency | Engine Python, readiness kandidat+VERSION di bawah lock GLOBAL, rotasi manual normal/darurat, revoke segera, expiry/grace serta retry teruji. |
 | M3 External Automation/distribution/monitoring/recovery | Scheduler eksternal, distribusi/konfirmasi, alert, rekonsiliasi dan pemulihan; tetap semi-otomatis sampai distribusi otomatis terbukti. |
 
-Tiga milestone ini membagi subsystem Global API Key. Requirement CRUD, Docker, TLS, dan penerimaan project keseluruhan tetap berlaku, tetapi tidak disamakan dengan gate M1 autentikasi. Paket source SQL saat ini bukan penyelesaian milestone Python mana pun.
+Tepat tiga milestone ini membagi subsystem Global API Key. Bootstrap dan CRUD HTTP live yang sudah lulus tidak menutup seluruh gate M1/M2/M3. Requirement CRUD, Docker, TLS, dan penerimaan project tetap berlaku; paket SQL atau keberhasilan build saja tidak menyelesaikan milestone.
 
 ## 13. Risks and Dependencies
 
@@ -408,7 +409,6 @@ Sebelum implementasi final, perlu konfirmasi:
 6. Apakah production akan menggunakan tabel lain dengan struktur dan aturan CRUD yang berbeda.
 7. Apakah akses API dibatasi hanya pada jaringan internal/VPN.
 
----
 
 **Target MVP:** sebuah REST API dalam Docker yang menerima request terautentikasi, menjalankan operasi CRUD melalui Oracle Function terhadap tabel training `KARYAWAN`, menggunakan Global API Key yang dikelola dan dirotasi di Python setiap 7 hari dari aktivasi aktual, serta menghasilkan response JSON yang konsisten dan dapat diaudit.
 
@@ -416,9 +416,9 @@ Sebelum implementasi final, perlu konfirmasi:
 
 ### 15.1 Tujuan dan batas reset
 
-Pemilik project meminta pembangunan ulang dari nol pada 26 Oktober 2026. Reset hanya menghapus file implementasi lokal; PRD ini tetap menjadi acuan requirement dan nama objek SQL. Reset file tidak menghapus, menonaktifkan, atau mengubah objek, data, maupun job pada Oracle. Reset ini juga tidak menghentikan container Docker yang sudah berjalan.
+Pembangunan ulang pada 26 Oktober 2026 hanya mereset file implementasi lokal. Reset tidak mengubah objek, data, atau job Oracle dan tidak menghentikan container Docker. PRD tetap menjadi acuan requirement serta nama objek.
 
-Daftar berikut berasal dari definisi SQL dan catatan skema pada implementasi sebelum reset. Daftar ini bukan hasil pemeriksaan database live. Sebelum menjalankan DDL, pengembang bersama DBA harus memverifikasi schema/PDB, keberadaan objek, signature, constraint, dan status kompilasinya.
+Registry berasal dari definisi SQL dan catatan skema sebelum reset, bukan inventaris live. Walaupun sebagian objek kini sudah diverifikasi pada target pengguna, setiap deployment tetap memerlukan pemeriksaan schema/PDB, keberadaan objek, signature, constraint, privilege, dan status kompilasi bersama DBA.
 
 ### 15.2 Aturan penamaan tetap
 
@@ -427,7 +427,7 @@ Daftar berikut berasal dari definisi SQL dan catatan skema pada implementasi seb
 3. Runtime hanya memanggil `F_CRUD_KARYAWAN_LOGISTIK` untuk bisnis. Autentikasi dan lifecycle key memakai Python serta bind SQL biasa terhadap dua tabel key. Validator, procedure key, dan job lama hanya registry historis: tidak dipanggil, dibuat ulang, dieksekusi, atau di-drop oleh pekerjaan ini.
 4. Perbaiki implementasi di dalam objek yang sama. Setiap perubahan signature, penambahan objek schema, atau pergantian nama memerlukan persetujuan pemilik project dan pembaruan PRD terlebih dahulu, termasuk tabel audit, index, sequence, trigger, package, atau job tambahan.
 5. Periksa objek yang sudah ada sebelum deployment. Jangan menjalankan ulang CREATE TABLE, ADD CONSTRAINT, atau CREATE JOB jika objek tersebut sudah terpasang. Jangan memakai DROP, TRUNCATE, penghapusan data, atau regenerasi key sebagai bagian otomatis dari setup ulang.
-6. SQL source boleh disiapkan offline sekarang, tanpa menunggu live privilege check. Pengguna menerapkan SQL sendiri setelah preflight manual atas target/privilege dan persetujuan perubahan. Menyiapkan source tidak mengklaim preflight, kompilasi, atau deployment live lulus.
+6. Source SQL boleh disiapkan offline sebelum pemeriksaan privilege live. Pengguna/DBA menerapkan DDL secara manual setelah preflight target/privilege dan persetujuan perubahan. Operasi live lain memerlukan izin target, fixture, scope, dan pemulihan tersendiri; source bukan izin eksekusi atau bukti preflight, kompilasi, dan deployment lulus.
 7. Bila requirement tidak dapat dipenuhi dengan objek yang tercatat, dokumentasikan kebutuhan dan minta persetujuan sebelum menambahkan objek. Jangan menghilangkan requirement untuk mempertahankan jumlah objek.
 
 ### 15.3 Function standalone yang dipertahankan
@@ -475,7 +475,7 @@ PROCEDURE P_PREPARE_API_KEY (
 PROCEDURE P_ROTATE_API_KEYS;
 ```
 
-Kontrak ini hanya mendokumentasikan implementasi sebelum reset. Format hex raw key dan transaksi procedure lama bukan kontrak Global baru. Python menghasilkan token URL-safe dan mengelola transaksi lifecycle; tidak mengirim raw key ke procedure Oracle. Seed DML dijalankan pengguna di sesi admin khusus tanpa transaksi lain karena mempunyai COMMIT eksplisit.
+Kontrak ini hanya mendokumentasikan implementasi sebelum reset. Format hex raw key dan transaksi procedure lama bukan kontrak Global baru. Python menghasilkan token URL-safe dan mengelola transaksi lifecycle; tidak mengirim raw key ke procedure Oracle. Seed state GLOBAL dijalankan pengguna di sesi admin khusus tanpa transaksi lain karena mempunyai COMMIT eksplisit; fixture dummy karyawan pada bagian 16.4 tidak melakukan COMMIT otomatis.
 
 ### 15.5 Registry tabel dan constraint kanonis
 
@@ -503,7 +503,7 @@ Catatan skema training sebelum reset:
 | `NO_TELP` | `VARCHAR2(20 BYTE)` |
 | `STATUS` | `VARCHAR2(10 BYTE)` |
 
-Tipe ID pada bagian 6.1 masih berupa rencana; bagian 6.1 sendiri menyerahkan tipe final kepada tabel training yang tersedia. Catatan NUMBER(5) di atas mendokumentasikan skema sebelumnya, bukan izin mengubah tipe tabel existing tanpa verifikasi DBA. Telepon tetap teks agar nol awal tidak hilang.
+Fresh schema pada bagian 6.1 memakai NUMBER(5), sesuai catatan training ini. Struktur target existing tetap harus diperiksa bersama DBA; registry bukan izin mengubah tipe kolom otomatis. Telepon tetap teks agar nol awal tidak hilang.
 
 Skema lama `API_KEY_AUTH` mempunyai CLIENT_ID, ACTIVE_AT, EXPIRED_AT dan LAST_USED_AT. Catatan itu bukan kontrak fresh dan bukan bukti keadaan live. Preflight manual harus membedakan legacy dari kanonis; patch status tidak menyelesaikan perbedaan tersebut.
 
@@ -528,14 +528,14 @@ Pemilik project menyetujui struktur pembangunan ulang dan meminta penanda jenis 
 
 ### 16.1 Prefix dan batas isi
 
-Gunakan pola `<PREFIX>_<NAMA_DESKRIPTIF>.sql`, dengan nama dasar huruf kapital dan pemisah underscore. Prefix yang sudah menjadi bagian nama objek tidak ditambahkan dua kali: `F_CRUD_KARYAWAN_LOGISTIK.sql`, bukan `F_F_CRUD_KARYAWAN_LOGISTIK.sql`.
+Gunakan pola `<PREFIX>_<NAMA_DESKRIPTIF>.sql`, huruf kapital, dan pemisah underscore. Jangan menggandakan prefix yang sudah menjadi bagian nama objek: [F_CRUD_KARYAWAN_LOGISTIK.sql](<../database/functions/F_CRUD_KARYAWAN_LOGISTIK.sql>), bukan `F_F_CRUD_KARYAWAN_LOGISTIK.sql`.
 
 | Prefix | Jenis file | Isi yang diizinkan |
 |---|---|---|
 | `F_` | Function | Satu definisi function standalone yang tercatat di registry. Helper lokal tetap di dalam definisi tersebut. |
 | `P_` | Procedure | Satu definisi procedure administratif yang tercatat di registry; compile tidak sekaligus memanggilnya. |
 | `Q_` | Query | Read-only metadata/grants atau verifikasi storage agregat; tanpa nilai hash/raw key, DML, DDL, provisioning, job, atau perubahan session/database. |
-| `D_` | DML seed | MERGE idempotent hanya untuk row GLOBAL yang belum ada, tanpa mint key; COMMIT eksplisit di sesi admin khusus. |
+| `D_` | DML seed/fixture manual | Seed state hanya MERGE row GLOBAL yang belum ada, tanpa mint key, dengan COMMIT eksplisit di sesi admin khusus. Pengecualian fixture karyawan pada bagian 16.4 hanya memanggil function CRUD, tanpa COMMIT otomatis atau DML bisnis langsung. |
 | `T_` | Table | Satu definisi tabel yang sudah tercatat di registry, hanya diterapkan jika tabel belum ada dan deployment disetujui. |
 | `C_` | Constraint | Satu perubahan constraint atau nullability pada tabel existing yang sudah tercatat di registry. |
 | `J_` | Job | Satu unit pendaftaran atau perubahan scheduler job existing sesuai registry; eksekusinya adalah perubahan database. |
@@ -544,22 +544,23 @@ Gunakan pola `<PREFIX>_<NAMA_DESKRIPTIF>.sql`, dengan nama dasar huruf kapital d
 
 ### 16.2 Pemetaan file target
 
-Delapan file source tersedia setelah persetujuan pengguna untuk menyiapkan tabel/function bisnis fresh-only pada 26 Oktober 2026. Dua patch constraint bisnis tetap prospektif dan belum dibuat. Ketersediaan file bukan bukti SQL sudah diterapkan atau dikompilasi di Oracle.
+Paket berisi sembilan file source: delapan source awal dan satu fixture dummy karyawan yang disetujui pengguna pada 27 Oktober 2026. Dua patch constraint bisnis tetap prospektif dan belum dibuat. Ketersediaan file bukan bukti SQL sudah diterapkan atau dikompilasi di Oracle.
 
 | Path relatif dari root project | Target atau tujuan |
 |---|---|
-| `database/prechecks/Q_VERIFY_EXISTING_OBJECTS.sql` | Preflight manual read-only: metadata, signature, constraint, grants; tanpa nilai hash atau secret. |
-| `database/prechecks/Q_VERIFY_API_KEY_STORAGE.sql` | Verifikasi read-only setelah deployment: skema kanonis, state/pointer, row count, status dan integritas waktu; tanpa nilai hash. |
-| `database/schema/T_API_KEY_AUTH.sql` | Fresh-only API_KEY_AUTH kanonis; identity ALWAYS, lowerhex64, lima status dan waktu TSTZ. Bukan migrasi legacy. |
-| `database/schema/T_API_KEY_ROTATION_STATE.sql` | Tabel kontrol GLOBAL baru pada bagian 7.3. |
-| `database/schema/C_API_KEY_AUTH_STATUS.sql` | Patch kondisional hanya constraint legacy dikenal CK_API_KEY_AUTH_STATUS; tidak rename ACTIVE_AT/EXPIRED_AT, bukan migrasi penuh. |
-| `database/seed/D_INIT_API_KEY_ROTATION_STATE.sql` | MERGE hanya row GLOBAL yang hilang; tidak mengubah row existing atau membuat key; COMMIT eksplisit, sesi admin khusus. |
+| [Q_VERIFY_EXISTING_OBJECTS.sql](<../database/prechecks/Q_VERIFY_EXISTING_OBJECTS.sql>) | Preflight manual read-only: metadata, signature, constraint, grants; tanpa nilai hash atau secret. |
+| [Q_VERIFY_API_KEY_STORAGE.sql](<../database/prechecks/Q_VERIFY_API_KEY_STORAGE.sql>) | Verifikasi read-only setelah deployment: skema kanonis, state/pointer, row count, status dan integritas waktu; tanpa nilai hash. |
+| [T_API_KEY_AUTH.sql](<../database/schema/T_API_KEY_AUTH.sql>) | Fresh-only API_KEY_AUTH kanonis; identity ALWAYS, lowerhex64, lima status dan waktu TSTZ. Bukan migrasi legacy. |
+| [T_API_KEY_ROTATION_STATE.sql](<../database/schema/T_API_KEY_ROTATION_STATE.sql>) | Tabel kontrol GLOBAL baru pada bagian 7.3. |
+| [C_API_KEY_AUTH_STATUS.sql](<../database/schema/C_API_KEY_AUTH_STATUS.sql>) | Patch kondisional hanya constraint legacy dikenal CK_API_KEY_AUTH_STATUS; tidak rename ACTIVE_AT/EXPIRED_AT, bukan migrasi penuh. |
+| [D_INIT_API_KEY_ROTATION_STATE.sql](<../database/seed/D_INIT_API_KEY_ROTATION_STATE.sql>) | MERGE hanya row GLOBAL yang hilang; tidak mengubah row existing atau membuat key; COMMIT eksplisit, sesi admin khusus. |
+| [D_DUMMY_KARYAWAN.sql](<../database/seed/D_DUMMY_KARYAWAN.sql>) | Fixture opsional 10 karyawan sintetis melalui function CRUD; tanpa overwrite atau COMMIT otomatis, rollback ke savepoint bila ada kegagalan. |
 | [T_KARYAWAN.sql](<../database/schema/T_KARYAWAN.sql>) | Fresh-only tabel bisnis sesuai tipe bagian 6.1 dan PK_KARYAWAN; tidak mengubah tabel existing. |
 | `database/schema/C_KARYAWAN_ID_NOT_NULL.sql` | Prospektif jika diperlukan pada existing; tidak dibuat atau dijalankan. |
 | `database/schema/C_PK_KARYAWAN.sql` | Target bisnis mendatang bila constraint existing belum terpasang. |
 | [F_CRUD_KARYAWAN_LOGISTIK.sql](<../database/functions/F_CRUD_KARYAWAN_LOGISTIK.sql>) | Fresh CREATE FUNCTION, nama/signature tetap, nested helpers saja, tanpa transaksi internal atau penggantian objek existing. |
 
-Enam file storage/precheck/seed ditambah dua source bisnis fresh-only tersedia untuk deployment manual pengguna. Tidak ada target F/P/J untuk autentikasi/rotasi baru; objek lama pada bagian 15.3/15.4/15.5 hanya historis.
+Enam file storage/precheck/seed, dua source bisnis fresh-only, dan satu fixture dummy opsional tersedia untuk penerapan manual pengguna. Tidak ada target F/P/J untuk autentikasi/rotasi baru; objek lama pada bagian 15.3/15.4/15.5 hanya historis.
 
 ### 16.3 Aturan pengembangan dan deployment
 
@@ -569,6 +570,16 @@ Enam file storage/precheck/seed ditambah dua source bisnis fresh-only tersedia u
 - Paket SQL tidak menjalankan deployment, mint key atau scheduler. Runtime/admin Python kini tersedia sebagai implementasi terpisah; SQL key menerima hash melalui bind, bukan raw key. Tes/probe Oracle read-only berizin telah dilakukan, tetapi DDL, provisioning, rotasi dan tes tulis live tetap memerlukan izin target/fixture terpisah.
 - Pengembang memeriksa status kompilasi dan hasil query verifikasi sesudah perubahan yang berizin. Precheck yang menemukan perbedaan schema, data tidak valid, atau objek existing yang tidak cocok harus menghentikan deployment sampai DBA memberi keputusan.
 - Penamaan file tidak memberi izin untuk membuat ulang tabel, mengganti constraint, atau mengubah job yang sudah terpasang.
+
+### 16.4 Fixture dummy karyawan, persetujuan 27 Oktober 2026
+
+Pengguna menyetujui penambahan source [D_DUMMY_KARYAWAN.sql](<../database/seed/D_DUMMY_KARYAWAN.sql>) untuk membantu pengujian manual tabel training. Ini pengecualian terbatas pada prefix D_, bukan penambahan objek schema atau endpoint bulk CRUD.
+
+- Tepat 10 data sintetis dengan ID 90001 sampai 90010, nama DUMMY KARYAWAN 01 sampai 10, cabang TRAINING, telepon sintetis digit berawalan nol, dan status AKTIF. Tidak ada data karyawan nyata, secret atau key.
+- Seluruh penambahan memakai mode CREATE pada F_CRUD_KARYAWAN_LOGISTIK dengan signature tetap, bukan INSERT/MERGE/UPDATE/DELETE langsung pada tabel bisnis. Tidak membuat atau mengubah function, tabel, constraint, job, maupun metadata autentikasi.
+- Respons CLOB diparse memakai fasilitas JSON Oracle 19c; wajib sukses, code SUCCESS, dan ID hasil sesuai fixture. Duplikat atau kegagalan apa pun menghentikan blok dan me-rollback seluruh penambahan blok itu ke savepoint, lalu meneruskan error. Tidak menimpa, melewati konflik, atau menghapus data existing.
+- Script tidak memiliki COMMIT otomatis. Pengguna menjalankannya pada sesi development/training khusus dengan autocommit OFF dan stop-on-first-error, memeriksa hasil, lalu memilih COMMIT atau ROLLBACK sendiri. Function deployed wajib sesuai kontrak tanpa commit/rollback internal; savepoint bukan perlindungan dari routine yang melakukan commit sendiri.
+- Penyiapan source dan pemeriksaan contract offline bukan izin eksekusi Oracle. Pengguna tetap memverifikasi target/schema/PDB, fixture ID kosong, privilege, function VALID, dan pemulihan sebelum menjalankan. Rerun sesudah data tersimpan akan gagal karena duplikat, bukan menambah atau mengganti data diam-diam.
 
 ## 17. Standar Kerja dan Target Teknologi
 
@@ -583,4 +594,4 @@ Pemilik project menetapkan aturan berikut sebelum penulisan kode pembangunan ula
 7. Pengembang memverifikasi dukungan Python terbaru pada FastAPI, Pydantic, python-oracledb, dependency transitif, serta OS/arsitektur target. Dukungan tertulis dan tersedianya package bukan bukti koneksi Oracle live sudah berhasil. Pemilihan Thin/Thick tetap mengikuti kebutuhan akun/database dan keputusan arsitektur.
 8. Jika rilis stabil Python terbaru belum didukung komponen yang dibutuhkan, pengembang melaporkan konflik dan meminta keputusan pemilik project. Jangan menurunkan versi Python, mengganti database, atau menonaktifkan pemeriksaan kompatibilitas tanpa persetujuan.
 
-Standar kerja publik tercantum pada bagian ini; instruksi agent lokal tidak disertakan dalam repository. Runtime mengunci Python 3.15.2, python-oracledb 26.0.1, uv 0.13.5, FastAPI 0.162.0 dan Pydantic 2.14.1 melalui manifest/pin/lockfile. Source API/CLI, tes dan Docker tersedia. Probe pool TCPS/SELECT/ekspresi JSON CLOB Oracle 19.26 read-only lulus; objek project belum ditemukan pada pemeriksaan terakhir. [Acceptance](<ACCEPTANCE.md>) memisahkan bukti tersebut dari compile function, auth/CRUD/rotasi live dan penerimaan production.
+Runtime mengunci Python 3.15.2, python-oracledb 26.0.1, uv 0.13.5, FastAPI 0.162.0, dan Pydantic 2.14.1 melalui [manifest](<../pyproject.toml>), [pin Python](<../.python-version>), dan [lockfile](<../uv.lock>). [Acceptance](<ACCEPTANCE.md>) memisahkan bukti source, tes offline, bootstrap/auth/CRUD live yang berizin, serta gate production yang belum selesai. Instruksi agent lokal tidak disertakan dalam repository.

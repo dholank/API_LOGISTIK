@@ -1,104 +1,57 @@
 # Arsitektur API_LOGISTIK
 
-Status: arsitektur implementasi source API/CLI yang tersedia; hasil pengujian dan gate live dicatat terpisah pada [acceptance](<ACCEPTANCE.md>). [PRD](<PRD.md>) menjadi sumber tunggal requirement, nama/signature objek, dan registry path SQL (bagian 15/16). [Rencana implementasi](<IMPLEMENTATION_PLAN.md>) menetapkan tiga milestone; [panduan database](<../database/README.md>) menjelaskan penerapan SQL oleh pengguna.
+FastAPI menghubungkan client dengan Oracle Database 19c Enterprise Edition. Python menangani HTTP, autentikasi, lifecycle Global API Key, dan batas transaksi. Validasi bisnis serta CRUD karyawan tetap di `F_CRUD_KARYAWAN_LOGISTIK`.
 
-Target: Python stabil terbaru yang diverifikasi/dikunci sebelum setup, Oracle Database 19c Enterprise Edition. Verifikasi dukungan dependency/platform, mode Thin/Thick dan Oracle Client bila diperlukan sesuai [standar kerja project](<PRD.md#17-standar-kerja-dan-target-teknologi>); dukungan tertulis bukan bukti koneksi live.
+[PRD](<PRD.md>) menjadi acuan requirement, nama/signature objek, dan registry SQL bagian 15/16. [Rencana implementasi](<IMPLEMENTATION_PLAN.md>) membagi pekerjaan menjadi tiga milestone. Hasil offline, bootstrap key, dan CRUD HTTP live pada fixture berizin dicatat terpisah di [acceptance](<ACCEPTANCE.md>); project belum siap production.
 
-## 1. Struktur target
+## Struktur dan packaging
 
-Gunakan src layout, instalasi editable untuk development dan instalasi package normal untuk pengujian rilis. Jangan menyisipkan `sys.path`. Setiap package Python mendapat `__init__.py` saat diimplementasikan. Tree berikut adalah target, bukan file atau fitur yang semuanya sudah tersedia.
+Project memakai src layout. Development dapat memakai instalasi editable; image rilis memasang package normal, tanpa menyisipkan `sys.path`. Struktur berikut menunjukkan pembagian source, bukan daftar gate yang sudah lulus:
 
 ```text
-API_logistik/
-├── src/api_logistik/
-│   ├── main.py
-│   ├── config.py
-│   ├── logging_config.py
-│   ├── errors.py
-│   ├── api/
-│   │   ├── router.py
-│   │   ├── dependencies.py
-│   │   ├── health.py
-│   │   └── karyawan.py
-│   ├── schemas/
-│   │   ├── karyawan.py
-│   │   └── responses.py
-│   ├── security/
-│   │   ├── api_keys.py
-│   │   ├── key_rotation.py
-│   │   └── secret_store.py
-│   ├── db/
-│   │   ├── pool.py
-│   │   ├── transactions.py
-│   │   ├── api_key_repository.py
-│   │   └── karyawan_repository.py
-│   └── middleware/request_context.py
-├── database/
-│   ├── README.md
-│   ├── prechecks/
-│   │   ├── Q_VERIFY_EXISTING_OBJECTS.sql
-│   │   └── Q_VERIFY_API_KEY_STORAGE.sql
-│   ├── schema/
-│   │   ├── T_API_KEY_AUTH.sql
-│   │   ├── T_API_KEY_ROTATION_STATE.sql
-│   │   ├── C_API_KEY_AUTH_STATUS.sql
-│   │   ├── C_KARYAWAN_ID_NOT_NULL.sql
-│   │   └── C_PK_KARYAWAN.sql
-│   ├── seed/D_INIT_API_KEY_ROTATION_STATE.sql
-│   └── functions/F_CRUD_KARYAWAN_LOGISTIK.sql
-├── tests/
-│   ├── conftest.py
-│   ├── unit/
-│   ├── api/
-│   ├── contracts/
-│   └── integration/
-├── docs/
-│   ├── PRD.md
-│   ├── ARCHITECTURE.md
-│   ├── IMPLEMENTATION_PLAN.md
-│   ├── API.md
-│   ├── OPERATIONS.md
-│   ├── ACCEPTANCE.md
-│   └── decisions/
-├── scripts/
-│   ├── check_environment.py
-│   └── export_openapi.py
-├── pyproject.toml
-├── Dockerfile
-├── compose.yaml
-├── .env.example
-├── .gitignore
-├── .dockerignore
-└── README.md
+src/api_logistik/
+  api/          route dan dependency HTTP
+  schemas/      kontrak request/response
+  security/     key, lifecycle, dan private store
+  db/           pool, transaksi, dan akses Oracle
+  middleware/   request context
+
+database/       precheck, schema, function, dan seed/fixture manual
+tests/          unit, API, source-contract, dan integrasi opt-in
+scripts/        pemeriksaan environment dan ekspor OpenAPI
+docs/           requirement, kontrak, operasi, dan bukti
 ```
 
-Lewati skeleton tanpa isi nyata. Delapan SQL pada registry PRD kini tersedia: enam storage/precheck/seed dan dua bisnis fresh-only yang disetujui pengguna. Source Python sudah tersedia; tree di atas tetap panduan ownership, bukan bukti setiap nama target harus dibuat bila tidak diperlukan. Manifest dependency memakai satu lockfile hasil tool yang dipilih, bukan daftar versi manual kedua. Virtualenv, cache, log, hasil ekspor, dan secret bukan source.
+Versi runtime dan dependency dikunci melalui [manifest](<../pyproject.toml>), [pin Python](<../.python-version>), dan satu [lockfile](<../uv.lock>). Perubahan versi memerlukan pengujian ulang. Virtualenv, cache, log, hasil ekspor lokal, dan secret bukan source repository.
 
-## 2. Batas modul
+Sembilan file SQL tersedia sesuai registry PRD, termasuk fixture dummy opsional. Pilihan file dan prasyarat penerapannya dijelaskan di [panduan database](<../database/README.md>), bukan diturunkan dari keberadaan direktori.
 
-| Modul target | Tanggung jawab dan batas |
+## Batas modul
+
+| Modul | Tanggung jawab dan batas |
 |---|---|
-| `main.py` | Merakit app/router/middleware/handler dan lifecycle resource, bukan SQL bisnis. |
-| `config.py` | Memvalidasi environment; tanpa koneksi saat import atau credential di output. |
-| `logging_config.py` | Log stdout/stderr tersanitasi, bukan body sensitif/raw key. |
-| `errors.py` | Kategori error dan response mapping terpusat; jangan menelan kegagalan tanpa diagnostik aman. |
-| `api/router.py` | Menggabungkan route `/api/v1`. |
-| `api/dependencies.py` | Memanggil autentikasi Python dan menyediakan koneksi request; tanpa provisioning/rotasi/DDL. |
-| `api/health.py` | Liveness proses tanpa query bisnis; bukan readiness Oracle. |
-| `api/karyawan.py` | Input, mode CRUD, status HTTP; tidak query tabel bisnis langsung. |
-| `schemas/` | Validasi bentuk request/response, bukan mengganti validasi bisnis Oracle. |
-| `security/api_keys.py` | Generasi `secrets.token_urlsafe(32)`, digest `hashlib.sha256` UTF-8 dan validasi status/waktu/state Global. |
-| `security/key_rotation.py` | Keputusan lifecycle, readiness, normal/emergency rotation, revoke dan retry; transaksi SQL biasa melalui repository. |
-| `security/secret_store.py` | Material rahasia durable di luar Oracle/repository; pengamanan permission dan distribusi, tanpa raw key di stdout/log. |
-| `db/pool.py` | Pool per proses, acquire/release/shutdown, bukan commit per cursor. |
-| `db/transactions.py` | Pemilik eksplisit commit/rollback; hasil bisnis gagal juga rollback. |
-| `db/api_key_repository.py` | Bind SQL metadata/hash, lock GLOBAL dan update state/key; tidak membuat/hash raw key atau memutuskan lifecycle. |
-| `db/karyawan_repository.py` | Memanggil hanya F_CRUD_KARYAWAN_LOGISTIK melalui PL/SQL bind, membaca CLOB/JSON, menutup cursor; tanpa commit sendiri. |
-| `middleware/request_context.py` | Request ID, durasi dan log tersanitasi; bukan keputusan bisnis/transaksi. |
+| [main.py](<../src/api_logistik/main.py>) | Merakit app, router, middleware, handler, dan lifecycle resource; tanpa SQL bisnis. |
+| [config.py](<../src/api_logistik/config.py>) | Memvalidasi konfigurasi; tanpa koneksi saat import atau credential dalam output. |
+| [logging_config.py](<../src/api_logistik/logging_config.py>) | Log tersanitasi ke stdout/stderr; tanpa body sensitif, raw key, atau traceback mentah. |
+| [errors.py](<../src/api_logistik/errors.py>) | Kategori error dan pemetaan response terpusat. |
+| [router.py](<../src/api_logistik/api/router.py>) | Menggabungkan route di `/api/v1`. |
+| [dependencies.py](<../src/api_logistik/api/dependencies.py>) | Autentikasi Python dan koneksi request; tanpa provisioning, rotasi, atau DDL. |
+| [health.py](<../src/api_logistik/api/health.py>) | Liveness proses tanpa query Oracle; bukan readiness database. |
+| [Handler karyawan](<../src/api_logistik/api/karyawan.py>) | Menerima input, memilih mode CRUD, dan status HTTP; tanpa query tabel bisnis langsung. |
+| [Schemas](<../src/api_logistik/schemas/>) | Bentuk request/response dan batas input, termasuk byte UTF-8 untuk target AL32UTF8; tidak menggantikan validasi bisnis Oracle. |
+| [api_keys.py](<../src/api_logistik/security/api_keys.py>) | Generasi `secrets.token_urlsafe(32)`, SHA-256 UTF-8, serta validasi status, waktu, dan pointer GLOBAL. |
+| [key_rotation.py](<../src/api_logistik/security/key_rotation.py>) | Keputusan readiness, normal/emergency rotation, revoke, expiry, dan retry; tanpa import DB/HTTP. |
+| [secret_store.py](<../src/api_logistik/security/secret_store.py>) | Material rahasia persisten di luar Oracle/repository, permission privat, dan ekspor tanpa raw key di stdout/log. |
+| [pool.py](<../src/api_logistik/db/pool.py>) | Pool per proses, acquire/release, dan shutdown; bukan commit per cursor. |
+| [transactions.py](<../src/api_logistik/db/transactions.py>) | Batas eksplisit commit/rollback; hasil bisnis gagal juga rollback. |
+| [Repository key](<../src/api_logistik/db/api_key_repository.py>) | Bind SQL hash/metadata, lock GLOBAL, dan penyimpanan perubahan state/key; tidak membuat raw key atau memutuskan lifecycle. |
+| [Repository karyawan](<../src/api_logistik/db/karyawan_repository.py>) | Memanggil function bisnis melalui PL/SQL bind, membaca CLOB JSON, dan menutup cursor; tanpa commit sendiri. |
+| [request_context.py](<../src/api_logistik/middleware/request_context.py>) | Request ID, durasi, dan metadata log; bukan keputusan bisnis/transaksi. |
+| [cli.py](<../src/api_logistik/cli.py>) | Jalur operator untuk provisioning dan lifecycle key; bukan endpoint publik atau task startup API. |
 
-API/CLI mengorkestrasi repository dan security. Engine lifecycle tidak mengimpor DB/HTTP; repository menggunakan immutable KeyRecord/RotationState dari engine untuk mapping persistence. Jangan import main untuk memperoleh settings/koneksi. Tidak ada ORM, generic repository, layer services atau domain tambahan pada MVP awal; tambahan layer memerlukan alasan tercatat. Business logic karyawan tetap Oracle; autentikasi/lifecycle key seluruhnya Python.
+API/CLI mengorkestrasi repository dan security. Engine lifecycle menggunakan immutable `KeyRecord` dan `RotationState`; repository memetakan keduanya ke persistence. Jangan mengimpor app utama untuk memperoleh settings atau koneksi. MVP tidak menambah ORM, generic repository, service layer, atau domain layer tanpa alasan rancangan yang dicatat.
 
-## 3. Request dan transaksi
+## Request dan transaksi
 
 ```text
 Client X-API-Key -> request context -> dependency autentikasi Python
@@ -108,43 +61,69 @@ Client X-API-Key -> request context -> dependency autentikasi Python
   -> periksa hasil bisnis -> commit/rollback -> HTTP JSON
 ```
 
-Handler bisnis hanya berjalan setelah autentikasi dan validasi bentuk input lulus. Key invalid/kosong/pending/expired/revoked menghasilkan 401; kegagalan database 503, fail-closed. Tidak ada fallback ke validator Oracle atau bypass. Raw key tidak di-trim/diubah case dan tidak dikirim ke Oracle. Request ID tersedia sebelum handler dan pada response yang dapat ditangani aplikasi.
+Handler bisnis hanya berjalan setelah autentikasi dan validasi input lulus. Key kosong, salah, PENDING, expired, atau revoked menghasilkan 401. Kegagalan pool, koneksi, atau query autentikasi menghasilkan 503, tanpa cache fallback, validator Oracle, atau auth bypass. Raw key tidak di-trim, diubah case, atau dikirim ke Oracle.
 
-Koneksi auth/CRUD dikelola dalam scope request. Pool per proses/worker, bukan per request/import; kapasitas total memperhitungkan jumlah worker. Pool dibuat lazy per proses, default min/max 1/5, acquire wait 5000 ms, TCP connect 5 detik dan call timeout 5000 ms; writer CLI memakai pool 1/1. Koneksi baru yang commit-nya tidak diketahui di-drop, dan rekonsiliasi memakai manager/session baru lalu lock GLOBAL sebelum inspeksi. Default wait dinaikkan dari 2 ke 5 detik setelah cold-pool probe 2,758 detik. Repository tidak commit; CRUD function tidak commit/rollback internal. Tangani exception teknis, success=false, kegagalan parsing sebelum commit dan cleanup. Respons gagal setelah commit tidak menjamin mutasi belum terjadi; retry membutuhkan rekonsiliasi.
+Repository memanggil function lewat blok PL/SQL dengan bind, bukan `SELECT function(...) FROM DUAL`. ID API berupa string digit ASCII maksimal lima digit, dikonversi ke NUMBER sesuai tabel training `NUMBER(5)`. Function mengembalikan CLOB JSON; aplikasi memvalidasi hasil sebelum commit. Exception teknis, `success=false`, dan kegagalan parsing memicu rollback. Repository dan function tidak memiliki commit sendiri.
 
-## 4. Global lifecycle dan administrasi
+Commit write selesai sebelum response HTTP sukses. Jika commit tidak pasti, koneksi di-drop; rekonsiliasi memakai manager/session baru dan mengambil lock GLOBAL sebelum membaca state lifecycle. Respons gagal setelah commit tidak menjamin mutasi belum terjadi. Jangan mengulang mutasi secara buta. Request ID tersedia sebelum handler dan pada response yang dapat ditangani aplikasi.
 
-Reuse API_KEY_AUTH untuk hash/metadata; API_KEY_ROTATION_STATE baru menyimpan singleton GLOBAL, pointer ACTIVE/GRACE/PENDING, due, readiness, VERSION dan operation metadata sesuai PRD. Tidak ada DBMS_CRYPTO, STANDARD_HASH, DBMS_SCHEDULER, auth function/procedure, atau job Oracle sebagai dependency.
+## Pool, timeout, dan TLS
 
-Python mengunci row GLOBAL dengan SELECT FOR UPDATE sebelum mutasi lifecycle. Konfirmasi readiness harus cocok dengan kandidat ID dan VERSION yang diharapkan di bawah lock yang sama, sebelum aktivasi; stale confirmation ditolak. Update row key dan state atomik, dengan operation ID untuk rekonsiliasi retry/commit tidak diketahui.
+Koneksi auth/CRUD berada dalam scope request. Pool dibuat lazy per proses/worker, bukan per request atau saat import. Kapasitas total harus menghitung jumlah worker dan proses operator.
 
-Aktivasi aktual A menetapkan due A+7 hari dan expiry asli A+8 hari. Cutover normal B memberi key lama yang masih live GRACE sampai min(expiry asli, B+24 jam), tanpa extension saat telat. Jangan revive EXPIRED/REVOKED. Scheduler eksternal hanya pemicu engine Python; sebelum distribusi dan ack otomatis, operasi tetap semi-otomatis dan expiry tetap berlaku saat pemicu gagal.
-
-Operator boleh revoke kompromi segera tanpa menunggu replacement, dengan risiko outage. Aktivasi darurat memerlukan replacement baru yang readiness-nya terkonfirmasi; transaksi yang sama mencabut semua key lama live termasuk GRACE. Tidak ada auth bypass atau grace darurat.
-
-F_VALIDATE_API_KEY_LOGISTIK, P_PREPARE_API_KEY, P_ROTATE_API_KEYS dan JOB_ROTATE_API_KEYS hanya historis, tidak dipanggil/dibuat ulang/di-drop oleh pekerjaan ini. Startup API tidak menjalankan DDL, compile function, seed atau rotasi. SQL disiapkan offline; pengguna melakukan manual privilege/target preflight dan menerapkannya sendiri. Ini bukan izin DB connect/push.
-
-Fresh schema memakai ACTIVATES_AT/EXPIRES_AT. Patch status legacy hanya constraint CK_API_KEY_AUTH_STATUS, tidak rename ACTIVE_AT/EXPIRED_AT atau menyelesaikan migrasi; mismatch menghentikan penerapan runtime kanonis sampai ada keputusan. Seed D_ hanya mengisi GLOBAL jika hilang, tanpa mint key, dengan COMMIT eksplisit pada sesi admin khusus. Q_ read-only tidak menampilkan hash/raw key.
-
-## 5. Tes dan bukti
-
-| Folder target | Bukti yang dituju |
+| Pengaturan | Default |
 |---|---|
-| `tests/unit/` | Bentuk input, mapping, parser, transaksi fake, hash/validasi/lifecycle Python dengan waktu terkontrol. |
-| `tests/api/` | HTTP/dependency override: invalid 401, DB failure 503, CRUD tidak dipanggil saat auth gagal. |
-| `tests/contracts/` | Nama/signature bisnis, prefix/path SQL, lowerhex64, schema/state; statis bukan bukti compile/live. |
-| `tests/integration/` | Oracle sandbox opt-in berizin: CRUD/rollback, locking, concurrent readiness, stale VERSION, lifecycle/expiry, emergency, retry/recovery. |
+| Pool API min/max | 1 / 5 |
+| Pool writer CLI | 1 / 1 |
+| Acquire wait | 5000 ms |
+| TCP connect timeout | 5 detik |
+| Call timeout | 5000 ms per panggilan driver |
 
-Tes default tanpa mutasi/jaringan Oracle. Integrasi memerlukan fixture, target, izin dan rencana pemulihan. Bedakan bukti source, mock, compile, live dan acceptance deployment; tidak ada klaim runtime dari dokumen/source saja.
+Koneksi Oracle wajib TCPS dengan pemeriksaan server DN; tidak ada fallback TCP atau penonaktifan verifikasi. Thin/Thick dan kebutuhan Oracle Client harus cocok dengan versi driver, Oracle 19c, OS, serta arsitektur target sesuai [standar teknologi](<PRD.md#17-standar-kerja-dan-target-teknologi>). Dokumentasi dukungan bukan bukti koneksi live.
 
-## 6. Dokumentasi dan referensi
+Client production wajib memakai TLS melalui reverse proxy eksternal. Publish loopback Docker untuk development bukan pengganti TLS, firewall, atau review proxy. Konfigurasi runtime dan batas deployment ada di [panduan operasi](<OPERATIONS.md>).
 
-Dokumen API/operasi/acceptance dibuat saat dibutuhkan, tanpa placeholder kelulusan. Bukti acceptance mencatat requirement ID, lingkungan, waktu, metode, hasil dan batas tanpa secret/data pribadi. Catat keputusan pool, driver, lockfile, TLS, distribusi dan recovery di `docs/decisions/`; jadwal A+7 dan grace sudah diputuskan, bukan opsi terbuka.
+## Global API Key dan administrasi
 
-Referensi desain historis berikut bukan verifikasi versi/dependency saat ini:
+`API_KEY_AUTH` menyimpan hash dan metadata. `API_KEY_ROTATION_STATE` menyimpan singleton GLOBAL, pointer ACTIVE/GRACE/PENDING, due, readiness, VERSION, dan operation metadata. Tidak ada dependency `DBMS_CRYPTO`, `STANDARD_HASH`, `DBMS_SCHEDULER`, atau routine autentikasi/job Oracle.
 
-- [FastAPI multi-file](<https://fastapi.tiangolo.com/tutorial/bigger-applications/>) dan [lifecycle](<https://fastapi.tiangolo.com/advanced/events/>).
-- [PyPA src layout](<https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/>).
-- [pytest good practices](<https://pytest.org/en/stable/explanation/goodpractices.html>).
-- [python-oracledb transactions](<https://python-oracledb.readthedocs.io/en/stable/user_guide/txn_management.html>) dan [interoperabilitas](<https://github.com/oracle/python-oracledb/blob/main/doc/src/user_guide/installation.rst>).
-- [Docker build practices](<https://docs.docker.com/build/building/best-practices/>).
+Setiap prepare, konfirmasi readiness, aktivasi, dan revoke mengunci row GLOBAL melalui `SELECT FOR UPDATE`. Konfirmasi harus cocok dengan kandidat ID dan VERSION yang diharapkan di bawah lock yang sama, sebelum aktivasi. Konfirmasi stale ditolak. Perubahan key/state atomik; operation ID membantu rekonsiliasi retry atau commit yang tidak pasti. Jika `LAST_OPERATION_ID` sudah tertimpa, hasil historis saja tidak cukup untuk mengonfirmasi operasi asli.
+
+Aktivasi aktual A menetapkan due A+7 hari dan expiry asli A+8 hari. Cutover normal pada B memberi key lama yang masih live status GRACE sampai `min(expiry_asli, B+24 jam)`. Cutover terlambat tidak memperpanjang umur key. Key EXPIRED/REVOKED tidak diaktifkan kembali.
+
+Operator boleh mencabut key kompromi tanpa replacement, dengan risiko outage. Aktivasi darurat memerlukan replacement baru yang sudah siap; transaksi yang sama mencabut seluruh key lama yang live, termasuk GRACE. Tidak ada overlap darurat, grace darurat, atau auth bypass.
+
+Scheduler eksternal hanya memicu engine Python. Sampai distribusi dan acknowledgment client juga otomatis, operasi tetap semi-otomatis. Expiry tetap berlaku ketika scheduler atau distribusi gagal.
+
+`F_VALIDATE_API_KEY_LOGISTIK`, `P_PREPARE_API_KEY`, `P_ROTATE_API_KEYS`, dan `JOB_ROTATE_API_KEYS` hanya catatan historis: tidak dipanggil, dibuat ulang, atau di-drop. Startup API tidak menjalankan DDL, compile function, seed, atau rotasi.
+
+## Penerapan SQL
+
+Pengguna/DBA memilih dan menerapkan SQL setelah preflight target, schema/PDB, privilege, fixture, dan pemulihan. Menyiapkan source bukan izin koneksi atau mutasi database.
+
+Fresh schema memakai `ACTIVATES_AT`/`EXPIRES_AT`. Patch status legacy hanya mengubah constraint `CK_API_KEY_AUTH_STATUS`, bukan mengganti nama `ACTIVE_AT`/`EXPIRED_AT` atau memigrasikan schema. Mismatch menghentikan runtime kanonis sampai ada keputusan migrasi.
+
+Seed state mengisi GLOBAL hanya jika belum ada, tanpa membuat key, dengan COMMIT eksplisit pada sesi setup khusus. Fixture dummy opsional mengikuti PRD bagian 16.4: penambahan hanya melalui function CRUD, tanpa overwrite atau COMMIT otomatis, dan rollback ke savepoint jika gagal. Query Q_ tetap read-only tanpa menampilkan nilai hash/raw key.
+
+## Pengujian dan bukti
+
+| Kelompok tes | Cakupan dan batas |
+|---|---|
+| [Unit](<../tests/unit/>) | Input, mapping, parsing, transaksi fake, hash, dan lifecycle dengan waktu terkontrol. |
+| [API](<../tests/api/>) | HTTP/dependency override, 401/503 fail-closed, dan penolakan callback bisnis saat auth gagal. |
+| [Source-contract](<../tests/contracts/>) | Nama/signature, registry SQL, schema, dan fixture; bukan bukti compile atau transaksi live. |
+| [Integrasi](<../tests/integration/>) | Oracle sandbox opt-in untuk CRUD/rollback, locking, concurrency, stale VERSION, lifecycle, dan recovery. |
+
+Tes default tidak membutuhkan jaringan atau mutasi Oracle. Integrasi memerlukan target, izin, fixture, dan rencana pemulihan terpisah. Bedakan bukti source, fake/mock, compile, live, dan deployment; hasil suatu tingkat tidak otomatis menutup tingkat lain.
+
+[Acceptance](<ACCEPTANCE.md>) mencatat requirement ID, lingkungan, waktu, metode, hasil, dan batas tanpa secret atau data pegawai nyata. Keputusan pool, driver, lockfile, TLS, distribusi, dan recovery harus memiliki alasan serta referensi yang dapat ditelusuri.
+
+## Referensi
+
+Referensi rancangan berikut bukan pengganti verifikasi dependency terkunci atau pengujian target:
+
+- [FastAPI multi-file](<https://fastapi.tiangolo.com/tutorial/bigger-applications/>) dan [lifecycle](<https://fastapi.tiangolo.com/advanced/events/>)
+- [PyPA src layout](<https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/>)
+- [pytest good practices](<https://pytest.org/en/stable/explanation/goodpractices.html>)
+- [python-oracledb transactions](<https://python-oracledb.readthedocs.io/en/stable/user_guide/txn_management.html>) dan [interoperabilitas](<https://github.com/oracle/python-oracledb/blob/main/doc/src/user_guide/installation.rst>)
+- [Docker build practices](<https://docs.docker.com/build/building/best-practices/>)

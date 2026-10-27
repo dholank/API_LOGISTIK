@@ -6,9 +6,9 @@ Python menangani HTTP, validasi bentuk input, autentikasi Global API Key, dan tr
 
 ## Status project
 
-API sudah berjalan dan lolos smoke test Docker di WSL2. Health check, dokumentasi HTTP, penolakan request tanpa key, serta stop/start container sudah diuji.
+API berjalan di Docker WSL2 dan sudah diuji terhadap Oracle 19.26 pada target FreeSQL pengguna. Bootstrap Global API Key dan satu siklus CRUD HTTP berizin lulus. Fixture sementara sudah dihapus; 10 dummy awal tetap utuh. Health check, dokumentasi HTTP, penolakan key tidak valid, dan stop/start proses juga sudah diuji.
 
-Project belum siap production. Autentikasi, CRUD, dan rotasi Oracle live masih memerlukan verifikasi; TLS client, distribusi key, scheduler, recovery, dan pengukuran p95 juga belum selesai. Lihat [bukti pengujian dan batasnya](<docs/ACCEPTANCE.md>).
+Project belum siap production. Pengujian lanjutan masih mencakup rotasi/grace, concurrency, expiry/revoke, outage database, restart dengan key aktif, TLS client, distribusi otomatis, recovery, dan p95. Scheduler belum dipasang. Rincian hasil dan pekerjaan yang tersisa ada di [acceptance](<docs/ACCEPTANCE.md>).
 
 ## Menjalankan API di WSL2
 
@@ -24,7 +24,7 @@ cp --no-clobber .env.example .env
 
 Isi konfigurasi tersebut secara lokal sebelum menjalankan API.
 
-Untuk koneksi Oracle, isi `ORACLE_DSN`, `ORACLE_USER`, dan `ORACLE_PASSWORD` bersama-sama. DSN harus memakai TCPS. Jangan memasukkan credential atau API Key ke source, log, maupun perintah shell. [Aturan Git](<.gitignore>) dan [aturan konteks build](<.dockerignore>) mengecualikan konfigurasi privat, wallet, key, cache, serta tooling lokal.
+Untuk koneksi Oracle, isi `ORACLE_DSN`, `ORACLE_USER`, dan `ORACLE_PASSWORD` bersama-sama. DSN harus memakai TCPS. Jangan memasukkan credential atau raw API Key ke source, log, maupun argumen perintah shell. [Aturan Git](<.gitignore>) dan [aturan konteks build](<.dockerignore>) mengecualikan konfigurasi privat, wallet, key, cache, serta tooling lokal.
 
 ### Build dan jalankan
 
@@ -53,7 +53,7 @@ Status `healthy` hanya menandakan proses API hidup, bukan kesiapan Oracle atau C
 |---|---|---|---|
 | POST | `/api/v1/karyawan` | Tambah karyawan | Wajib |
 | GET | `/api/v1/karyawan/{id}` | Ambil satu karyawan | Wajib |
-| PUT | `/api/v1/karyawan/{id}` | Ganti seluruh field karyawan | Wajib |
+| PUT | `/api/v1/karyawan/{id}` | Perbarui seluruh field selain ID | Wajib |
 | DELETE | `/api/v1/karyawan/{id}` | Hapus karyawan | Wajib |
 | GET | `/api/v1/health/live` | Periksa proses API | Tidak |
 
@@ -66,6 +66,8 @@ Bentuk input, contoh response, kode error, dan batas retry dijelaskan dalam [kon
 Pengguna menerapkan SQL secara manual setelah memeriksa target schema/PDB, objek existing, privilege, dan rencana pemulihan. Ikuti [panduan database](<database/README.md>); jangan menjalankan seluruh folder SQL otomatis. Source fresh-only bukan migrasi legacy atau izin menimpa objek existing.
 
 CRUD baru dapat digunakan setelah tabel, function, dan key siap. Function bisnis tidak melakukan commit internal; Python mengelola commit atau rollback.
+
+Untuk pengujian manual, [fixture dummy karyawan](<database/seed/D_DUMMY_KARYAWAN.sql>) menyediakan 10 data sintetis melalui function CRUD, tanpa overwrite atau COMMIT otomatis. Ikuti [panduan fixture](<database/README.md#d-mengisi-dummy-karyawan-opsional>) sebelum menjalankannya di schema development/training.
 
 Global API Key digunakan bersama seluruh client. Key baru hanya boleh aktif setelah distribusinya dikonfirmasi untuk kandidat dan versi state yang tepat. Rotasi jatuh tempo 7 hari setelah aktivasi, dengan hard expiry pada hari ke-8. Grace key lama maksimal 24 jam dan tidak boleh melewati expiry aslinya. Key expired atau revoked tidak diaktifkan kembali.
 
@@ -96,7 +98,7 @@ docker run --rm --network none \
   'ruff check src scripts tests && ruff format --check src scripts tests && mypy --cache-dir=/tmp/mypy src/api_logistik'
 ```
 
-Hasil WSL2 pada 27 Oktober 2026: 336 tes lulus, 2 tes khusus Windows dilewati, 5 tes integrasi tidak dijalankan, dan coverage 85%. Lint, format, serta mypy Linux lulus; target mypy `win32` juga lulus secara statis dari Linux. Suite masih menampilkan satu warning deprecation TestClient/httpx.
+Hasil WSL2 pada 27 Oktober 2026 setelah penambahan contract fixture SQL: 343 tes lulus, 2 tes khusus Windows dilewati, 5 tes integrasi tidak dijalankan, dan coverage 85%. Lint, format, serta mypy Linux lulus; target mypy `win32` juga lulus secara statis dari Linux. Suite masih menampilkan satu warning deprecation TestClient/httpx.
 
 Tes integrasi Oracle memerlukan opt-in, target sandbox, profil privat eksternal, fixture, dan izin terpisah. Hasil offline tidak membuktikan koneksi, CRUD, transaksi, atau rotasi Oracle live. Rincian ada di [acceptance](<docs/ACCEPTANCE.md>).
 
