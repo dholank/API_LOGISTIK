@@ -8,6 +8,11 @@ __pycache__/
 build/
 dist/
 
+# Local Docker image exports
+api-logistik*.tar
+api-logistik*.tar.gz
+api-logistik*.tar.zst
+
 # Test, lint, and type-check outputs
 .pytest_cache/
 pytest-of-*/

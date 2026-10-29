@@ -8,6 +8,12 @@ Panduan ini mencakup deployment, konfigurasi, dan pekerjaan operator. Perintah d
 
 Stage akhir hanya menerima virtualenv, bukan source checkout, SQL, uv, atau dev tools. Container memakai UID/GID 10001:10001. Jangan memasukkan credential ke build argument, layer image, atau source bind mount.
 
+Arsip image lokal dengan pola `api-logistik*.tar`, `api-logistik*.tar.gz`, dan `api-logistik*.tar.zst` dikecualikan oleh [Git ignore](<../.gitignore>) dan [Docker ignore](<../.dockerignore>), termasuk di subfolder. Metadata `:Zone.Identifier` tetap dikecualikan agar salinan dari Windows tidak ikut commit/build. File privat, cache, dan tooling pada subfolder juga dikecualikan dari konteks Docker; template environment di luar direktori privat tetap disertakan.
+
+Aturan mengikuti [semantik gitignore](<https://github.com/git/htmldocs/blob/gh-pages/gitignore.adoc>) dan [Docker build context](<https://github.com/docker/docs/blob/main/content/manuals/build/concepts/context.md>). Ignore tidak menghapus file yang sudah tracked atau menyaring hasil `docker image save`; arsip menyimpan image yang sudah dibangun, sehingga isinya tetap perlu direview sebelum dibagikan.
+
+Pemeriksaan 29 Oktober 2026 meluluskan 68 kasus path Git dan 70 assertion build context Docker dengan fixture sintetis `FROM scratch`. Seluruh 75 path source tracked tetap disertakan. Tes tidak memakai credential asli atau Oracle; container API tetap berhenti. Ini pengujian aturan ignore, bukan build ulang image API atau audit seluruh layer image.
+
 ### Jalur default WSL2, pemeriksaan 27 Oktober 2026
 
 Docker Engine berjalan pada distro Ubuntu WSL2 yang sama, melalui context `default` dan socket Unix lokal. Image resmi Python 3.15.2 kini tersedia; Dockerfile mengunci digest OCI index `sha256:197f6622a70b727a4e61bdac13a73b4e2b914b896aa5a729ceb1f45a09bde5fa`. Pembaruan digest memerlukan review dan pengujian ulang, sesuai [panduan pin base image Docker](<https://docs.docker.com/build/building/best-practices/#pin-base-image-versions>).
