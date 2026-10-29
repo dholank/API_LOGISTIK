@@ -94,7 +94,62 @@ Linux memerlukan owner dan permission yang sesuai. Windows memeriksa ancestor/DA
 
 ## Prosedur CLI development
 
-Contoh berikut menjelaskan interface, bukan urutan siap salin. Jalankan `api-logistik-keys --help` dan subcommand `--help` dari package terinstal sebelum perubahan berizin. Setiap command menerima `--env-file PRIVATE_PROFILE`; tanpa argumen itu CLI memakai profil default lokal. Placeholder `N` menandai ID atau VERSION sesuai argumennya. Gunakan hasil `status` terbaru, bukan angka tebakan.
+### Alur utama: rotasi manual
+
+Operator menjalankan setiap langkah sendiri. Tidak ada cron, timer, loop tick, auto-confirm, atau auto-retry pada tahap ini. Manual tidak menonaktifkan expiry: siapkan dan distribusikan successor sebelum due, lalu aktifkan pada/setelah due. Semua client berbagi satu key GLOBAL; perubahan harus dikoordinasikan dengan seluruh penerima.
+
+[Launcher manual](<../scripts/api_key_operator.sh>) memakai Bash di WSL2/Linux dan menjalankan satu CLI pada satu container operator. API boleh tetap berhenti. Launcher tidak memakai Python host, Docker Compose, port HTTP, source bind mount, atau Docker socket dalam container. Image harus sudah tersedia lokal dan dipin ID `sha256:...`; tidak ada pull atau pergantian image otomatis. Launcher memaksa context `default` pada socket lokal `/var/run/docker.sock` dan menolak override endpoint/context remote. Custom socket, rootless Docker, atau context `desktop-linux` belum menjadi target launcher ini; jangan mengubah context agar mount privat diam-diam berpindah host.
+
+Default direktori privat adalah `${XDG_DATA_HOME:-$HOME/.local/share}/api-logistik`; `API_LOGISTIK_OPERATOR_ROOT` boleh menunjuk lokasi absolut lain di luar checkout. Di WSL, gunakan filesystem Linux seperti home operator, bukan folder Windows bersama. Launcher fase ini menargetkan WSL2/Linux, bukan shell Windows/macOS native. Struktur yang diperlukan:
+
+```text
+ROOT/                       owner operator, 0700
+  operator-manual.env       koneksi Oracle lengkap dan setting operator, 0600
+  operator-image.id         satu image ID immutable, 0600
+  master.key                master existing, 0600
+  ciphertext/               encrypted store existing, 0700
+  delivery/                 file export privat, 0700
+  audit/                    intent dan hasil command, 0700
+```
+
+Profil privat memuat trio Oracle yang disetujui, `OPERATOR_AUTHORIZED=true`, `KEY_SECRET_STORE_DIR=ROOT/ciphertext`, dan `KEY_ENCRYPTION_KEY_FILE=ROOT/master.key`, dengan path absolut yang sama di host/container. Jangan memakai contoh `ROOT` secara literal, mengirim credential lewat argv, atau shell-source profil. Jangan overwrite bootstrap profile atau master key existing. Simpan profil, pin, dan material privat melalui akses operator, bukan Git. Permission direktori/file yang tidak aman, symlink, atau pin yang bukan image ID ditolak.
+
+```bash
+scripts/api_key_operator.sh --help
+scripts/api_key_operator.sh status
+```
+
+Contoh berikut adalah interface, bukan batch siap jalan. Ganti setiap ID dan VERSION dari hasil pembacaan terbaru; `VERSION_SETELAH_CONFIRM` berbeda dari VERSION sebelum konfirmasi.
+
+```text
+scripts/api_key_operator.sh prepare --expected-version VERSION_STATUS --reason manual_rotation
+scripts/api_key_operator.sh export --key-id ID_PENDING --output ABSOLUTE_ROOT/delivery/successor.txt
+scripts/api_key_operator.sh confirm-distributed --key-id ID_PENDING --expected-version VERSION_PENDING --reason distribution_confirmed
+scripts/api_key_operator.sh activate --expected-version VERSION_SETELAH_CONFIRM --reason manual_rotation
+scripts/api_key_operator.sh status
+```
+
+1. Baca status dan due/expiry. Jika PENDING sudah ada, review kandidat tersebut; jangan menggantinya tanpa menilai dampak distribusi.
+2. Jalankan prepare dengan VERSION tepat. PENDING belum valid untuk autentikasi. UUID operasi tersimpan pada audit privat sebelum command dijalankan.
+3. Export ke file baru langsung di delivery, tanpa overwrite. Salurkan melalui kanal rahasia yang disetujui; pastikan seluruh penerima siap. Keberadaan file tidak berarti readiness.
+4. Baca status lagi, lalu confirm-distributed untuk ID_PENDING dan VERSION yang benar. Kandidat/VERSION yang berubah memerlukan pemeriksaan ulang.
+5. Activate normal pada/setelah due dengan VERSION hasil konfirmasi. Reason `manual_rotation` tidak melewati pemeriksaan due; flag `--manual` untuk cutover lebih awal hanya jika operator memintanya secara eksplisit. Launcher tidak menambahkan flag itu.
+6. Baca status dari koneksi baru. Periksa ACTIVE/GRACE dan waktu; tes HTTP membutuhkan API aktif serta izin scope terpisah. Jangan menyatakan client siap hanya dari health check.
+7. Pastikan seluruh client memakai key baru sebelum grace selesai. Key expired tetap ditolak walaupun tidak ada scheduler yang membersihkan status metadata.
+
+Output export terbatas pada direct child delivery, tanpa file existing/symlink. Launcher menolak tick, init-secret-key, override env-file, dan argumen tidak dikenal. Untuk bootstrap target lain atau operasi lanjut, gunakan CLI terinstal setelah izin terpisah, bukan mengakali guard launcher.
+
+Setiap pemanggilan memiliki audit unik berpermission 0600, berisi intent/UUID, image ID, stdout CLI tersanitasi, dan exit code; bukan dump argv atau credential. Stderr Docker tidak disalin ke terminal/audit; kegagalan engine ditandai dengan pesan konstan dan exit code aslinya. Jika hasil tidak lengkap atau sinkronisasi audit gagal, review UUID sebelum mutasi berikutnya. Tidak ada chaining langkah berikutnya. Jika exit 4 atau proses terputus, hentikan mutasi dan gunakan UUID asli:
+
+```text
+scripts/api_key_operator.sh reconcile --operation-id UUID_OPERASI_ASLI --key-id ID_JIKA_DIKETAHUI
+```
+
+Reconcile tidak mendapat UUID baru pengganti. Jika `LAST_OPERATION_ID` sudah berubah, review manual tetap diperlukan. Jangan membuang ciphertext/export/audit ketika hasil operasi belum jelas.
+
+### Interface CLI terinstal
+
+Contoh berikut menjelaskan interface lanjutan, bukan urutan siap salin. Bootstrap atau tick di bawah ini bukan bagian alur manual aktif. Jalankan `api-logistik-keys --help` dan subcommand `--help` dari package terinstal sebelum perubahan berizin. Setiap command menerima `--env-file PRIVATE_PROFILE`; tanpa argumen itu CLI memakai profil default lokal. Placeholder `N` menandai ID atau VERSION sesuai argumennya. Gunakan hasil `status` terbaru, bukan angka tebakan.
 
 ```text
 api-logistik-keys init-secret-key --output PRIVATE_ENCRYPTION_KEY_FILE --env-file PRIVATE_PROFILE
@@ -159,5 +214,7 @@ Mypy 2.4.0 mengenali [platform checks](<https://mypy.readthedocs.io/en/stable/co
 Jalankan mypy default dalam image tes Linux. Target tambahan `mypy --platform win32` hanya memeriksa cabang Windows secara statis, bukan menggantikan uji ACL Windows asli. Fixture Linux tetap offline, tanpa store operator atau Oracle nyata.
 
 ## Referensi keputusan
+
+Pembatasan daemon mengikuti [Docker contexts](<https://github.com/docker/docs/blob/main/content/manuals/engine/manage-resources/contexts.md>); bind mount mengacu filesystem daemon, sehingga context remote tidak boleh dipakai untuk profil lokal. Launcher manual memakai [opsi hardening Docker](<https://github.com/docker/docs/blob/main/data/cli/engine/docker_container_create.yaml>) dan [bind mount read-only](<https://github.com/docker/docs/blob/main/content/manuals/engine/storage/bind-mounts.md>) agar operator tidak memerlukan service API. Profil mengikuti [python-dotenv](<https://github.com/theskumar/python-dotenv/blob/main/_autodocs/api-reference/main.md>) dengan interpolasi nonaktif sesuai loader project; serializer diuji round-trip untuk quote, backslash, dollar, whitespace, Unicode, dan newline. Tidak ada credential di contoh command.
 
 Acuan konfigurasi yang dibaca melalui Context7: [Docker multi-stage](<https://docs.docker.com/build/building/multi-stage/>), [Dockerfile](<https://docs.docker.com/reference/dockerfile/>), [Compose services](<https://docs.docker.com/reference/compose-file/services/>), [uv 0.13.5 Docker integration](<https://github.com/astral-sh/uv/blob/0.13.5/docs/guides/integration/docker.md>), dan [FastAPI configuration](<https://fastapi.tiangolo.com/reference/fastapi/>). Multi-stage/non-editable memisahkan runtime dari checkout; COPY allowlist mengecualikan profil privat; loopback publish membatasi eksposur host. Keputusan itu bukan sertifikasi keamanan atau acceptance production.

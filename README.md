@@ -71,7 +71,16 @@ Untuk pengujian manual, [fixture dummy karyawan](<database/seed/D_DUMMY_KARYAWAN
 
 Global API Key digunakan bersama seluruh client. Key baru hanya boleh aktif setelah distribusinya dikonfirmasi untuk kandidat dan versi state yang tepat. Rotasi jatuh tempo 7 hari setelah aktivasi, dengan hard expiry pada hari ke-8. Grace key lama maksimal 24 jam dan tidak boleh melewati expiry aslinya. Key expired atau revoked tidak diaktifkan kembali.
 
-Provisioning, distribusi, revoke, dan rotasi memakai CLI operator dengan profil privat terpisah, bukan endpoint HTTP. Simpan master key, store terenkripsi, serta hasil ekspor key di luar project dengan permission privat. Scheduler tetap semi-otomatis selama distribusi dan konfirmasi client masih manual. Prosedurnya ada di [runbook operator](<docs/OPERATIONS.md#prosedur-cli-development>).
+Tahap aktif memakai rotasi manual oleh operator, bukan endpoint HTTP atau scheduler. Urutannya `status → prepare → export → confirm-distributed → activate → status`. Manual tidak menghapus due 7 hari atau expiry 8 hari; distribusi ke seluruh client tetap harus selesai sebelum aktivasi.
+
+[Launcher operator](<scripts/api_key_operator.sh>) menjalankan CLI dalam container terpisah tanpa menyalakan API:
+
+```bash
+scripts/api_key_operator.sh --help
+scripts/api_key_operator.sh status
+```
+
+Launcher memerlukan profil, pin image, master key, store, delivery, dan audit privat di luar project. Jangan menyalin material itu ke repository atau image. Persiapan, parameter VERSION/ID, dan prosedur kegagalan ada di [runbook operator](<docs/OPERATIONS.md#prosedur-cli-development>). Pemicu waktu serta distribusi otomatis ditunda ke M3.
 
 ## Pengujian
 
@@ -98,7 +107,7 @@ docker run --rm --network none \
   'ruff check src scripts tests && ruff format --check src scripts tests && mypy --cache-dir=/tmp/mypy src/api_logistik'
 ```
 
-Hasil WSL2 pada 27 Oktober 2026 setelah penambahan contract fixture SQL: 343 tes lulus, 2 tes khusus Windows dilewati, 5 tes integrasi tidak dijalankan, dan coverage 85%. Lint, format, serta mypy Linux lulus; target mypy `win32` juga lulus secara statis dari Linux. Suite masih menampilkan satu warning deprecation TestClient/httpx.
+Hasil WSL2 pada 29 Oktober 2026 setelah penambahan launcher manual: 445 tes lulus, 2 tes khusus Windows dilewati, 5 tes integrasi tidak dijalankan, 9 subtests lulus, dan coverage Python 85%. Termasuk 102 kasus launcher dengan Docker palsu, bukan 102 rotasi Oracle live. Lint, format 49 file, serta mypy Linux lulus; target mypy `win32` juga lulus secara statis dari Linux. Suite masih menampilkan satu warning deprecation TestClient/httpx.
 
 Tes integrasi Oracle memerlukan opt-in, target sandbox, profil privat eksternal, fixture, dan izin terpisah. Hasil offline tidak membuktikan koneksi, CRUD, transaksi, atau rotasi Oracle live. Rincian ada di [acceptance](<docs/ACCEPTANCE.md>).
 
@@ -106,6 +115,7 @@ Tes integrasi Oracle memerlukan opt-in, target sandbox, profil privat eksternal,
 
 | Dokumen | Isi |
 |---|---|
+| [Command harian](<docs/COMMANDS.md>) | Docker/API, key baru, rotasi/revoke, rekonsiliasi, tes, dan transfer image |
 | [PRD](<docs/PRD.md>) | Requirement, batas scope, dan registry objek SQL |
 | [Arsitektur](<docs/ARCHITECTURE.md>) | Tanggung jawab modul dan alur transaksi |
 | [Rencana implementasi](<docs/IMPLEMENTATION_PLAN.md>) | Milestone dan gate penerimaan |

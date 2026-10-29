@@ -93,7 +93,9 @@ Aktivasi aktual A menetapkan due A+7 hari dan expiry asli A+8 hari. Cutover norm
 
 Operator boleh mencabut key kompromi tanpa replacement, dengan risiko outage. Aktivasi darurat memerlukan replacement baru yang sudah siap; transaksi yang sama mencabut seluruh key lama yang live, termasuk GRACE. Tidak ada overlap darurat, grace darurat, atau auth bypass.
 
-Scheduler eksternal hanya memicu engine Python. Sampai distribusi dan acknowledgment client juga otomatis, operasi tetap semi-otomatis. Expiry tetap berlaku ketika scheduler atau distribusi gagal.
+Tahap aktif adalah rotasi manual melalui [launcher Docker](<../scripts/api_key_operator.sh>): satu command CLI per pemanggilan, profil dan pin image privat, tanpa menyalakan API atau memasang scheduler. Root operator di-mount read-only; hanya store dan delivery yang diperlukan CLI bersifat writable. Host mencatat audit privat dengan UUID sebelum command, mempertahankan exit code, dan tidak mengulang mutasi otomatis. Launcher tidak mengubah engine, repository, settings, atau kontrak HTTP.
+
+Scheduler eksternal ditunda ke M3 dan nantinya hanya memicu engine Python. Sampai distribusi dan acknowledgment client juga otomatis, pemicu terjadwal masih semi-otomatis. Pengamanan composite tick yang terputus/commit unknown harus disiapkan sebelum mengaktifkan scheduler. Expiry tetap berlaku ketika operator terlambat, WSL mati, atau distribusi gagal.
 
 `F_VALIDATE_API_KEY_LOGISTIK`, `P_PREPARE_API_KEY`, `P_ROTATE_API_KEYS`, dan `JOB_ROTATE_API_KEYS` hanya catatan historis: tidak dipanggil, dibuat ulang, atau di-drop. Startup API tidak menjalankan DDL, compile function, seed, atau rotasi.
 

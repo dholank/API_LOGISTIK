@@ -6,16 +6,49 @@ Project belum siap production. Dokumen ini memisahkan bukti source, tes offline,
 
 ## Ringkasan terkini
 
-Snapshot 27 Oktober 2026, zona waktu Asia/Jakarta:
+Snapshot 29 Oktober 2026, zona waktu Asia/Jakarta. Bukti CRUD HTTP tetap berasal dari 27 Oktober; setelah setup manual, cutover tanpa grace dan verifikasi autentikasi melalui Oracle lulus pada 29 Oktober tanpa menyalakan HTTP API:
 
 | Area | Bukti terakhir | Batas |
 |---|---|---|
-| Suite offline Linux Docker | 343 passed, 2 Windows-only skips, 5 integration deselected, 9 subtests passed; coverage 85% | Satu warning TestClient/httpx; bukan suite integrasi Oracle |
-| Lint dan format | Ruff check lulus; 48 file sesuai format | Bukan bukti runtime |
+| Suite offline Linux Docker | 445 passed, 2 Windows-only skips, 5 integration deselected, 9 subtests passed; coverage Python 85% | Satu warning TestClient/httpx; bukan suite integrasi Oracle |
+| Lint dan format | Ruff check lulus; 49 file sesuai format; sintaks Bash lulus | Bukan bukti cutover Oracle |
 | Mypy | Linux dan target statis `win32` lulus pada 27 source files | Tidak menggantikan tes ACL Windows asli |
 | API dan Oracle | Bootstrap key serta 24 pemeriksaan HTTP setelah aktivasi lulus pada Oracle 19.26/AL32UTF8 | Fixture dan client lokal yang disetujui, bukan production |
 | Data fixture | 10 dummy awal tetap cocok; fixture CRUD sementara 91991 sudah dihapus | Tidak mengizinkan mutasi data lain |
-| Operasi lanjutan | Rotasi, outage, concurrency, restart dengan key aktif, TLS client, recovery, dan p95 belum lengkap | Scheduler/distribusi otomatis belum dipasang atau dibuktikan |
+| Rotasi manual tanpa grace | KEY_ID 21 ACTIVE, ID 1 REVOKED, GLOBAL VERSION 6; key lama ditolak dan key baru diterima oleh dependency autentikasi pada pool Oracle baru | Tidak ada HTTP atau pengujian konkurensi/failure pada tahap ini |
+| Operasi lanjutan | Rotasi normal/grace, outage, concurrency, restart dengan key aktif, TLS client, recovery, dan p95 belum lengkap | Scheduler/distribusi otomatis belum dipasang atau dibuktikan |
+
+## Cutover manual tanpa grace, 29 Oktober 2026 (Asia/Jakarta)
+
+Pengguna meminta key baru serta pemadaman key lama, lalu mengonfirmasi seluruh client siap memakai kandidat ID 21/VERSION 4 setelah menerima file delivery privat. Cutover memakai flag emergency karena tidak boleh ada grace, dengan reason `manual_rotation`; tidak ada klaim insiden kompromi.
+
+- Preflight: GLOBAL VERSION 3, ACTIVE ID 1, tanpa PENDING/GRACE. Prepare melalui launcher menghasilkan kandidat ID 21 dan VERSION 4; export privat 0600 tanpa overwrite, tanpa menampilkan raw key. ID identity tidak diasumsikan berurutan.
+- Confirm-distributed mengikat ID 21/VERSION 4 dan menghasilkan VERSION 5. Activate `--emergency` dengan expected VERSION 5 mencabut old live dan mengaktifkan replacement dalam satu transaksi engine/repository existing di bawah lock GLOBAL. Tidak ada SQL autentikasi alternatif atau retry mutasi.
+- Commit terkonfirmasi pada VERSION 6, ACTIVE ID 21, tanpa pointer PENDING/GRACE. UUID aktivasi: `c9196157-bd8c-45ad-b142-72fcc526ce3b`.
+- Pool Oracle baru memastikan ID 1 berstatus REVOKED dan ID 21 ACTIVE. Lookup hash key lama tidak menemukan record autentikasi yang memenuhi pointer GLOBAL; dependency `require_api_key` menolak key lama dan menerima key baru. Raw key hanya dibaca ke memori dari file privat, bukan dikirim ke Oracle.
+- Aktivasi aktual: 29 Oktober 2026 **14:19:28 WIB**. Due berikutnya: **5 November 2026 14:19:28 WIB**; expiry: **6 November 2026 14:19:28 WIB**, sesuai A+7/A+8. Key lama tidak mempunyai grace dan tidak boleh diaktifkan kembali.
+- Master key, bootstrap profile, ciphertext existing, serta file delivery lama/baru dipertahankan. Scan calon file publikasi dan audit operator tidak menemukan raw key lama/baru, master key, digest key, atau credential DB. Tidak ada pembacaan/perubahan data karyawan, DDL, perubahan source engine, atau commit/push Git.
+
+Bukti ini adalah satu cutover tanpa grace serta verifikasi dependency autentikasi terhadap Oracle, bukan HTTP 200/401 baru. API tetap berhenti; tidak ada restart, scheduler, atau pengujian outage/rollback/concurrency. Normal grace dan emergency dengan old GRACE masih memerlukan bukti terpisah. File key lama disimpan privat untuk audit, tetapi tidak lagi valid; client harus memakai replacement yang sudah diterima.
+
+## Rotasi manual operator, 29 Oktober 2026 (Asia/Jakarta)
+
+Bagian ini mencatat fase penyiapan launcher sebelum cutover di atas. Pengguna memilih manual terlebih dahulu. [Launcher Bash](<../scripts/api_key_operator.sh>) memanggil CLI existing dalam satu container operator per command, menggunakan image ID immutable dan daemon lokal, tanpa menyalakan API. Tidak ada scheduler, auto-confirm, chaining, retry otomatis, atau perubahan engine/schema. Root privat read-only dengan overlay store/delivery writable; intent/UUID disinkronkan ke audit owner-only sebelum command. Stderr engine dibuang, bukan dicatat mentah.
+
+| Pemeriksaan | Hasil dan batas |
+|---|---|
+| [Tes launcher](<../tests/unit/test_key_operator_launcher.py>) | 102 kasus lulus: opsi/flag/reason/UUID, audit sebelum Docker, exit code, interrupt INT/TERM, pin immutable, mount, symlink/hardlink/permission, audit gagal, path berspasi, export tanpa overwrite, dan penolakan remote context. Docker dipalsukan melalui executable Python yang dipanggil fungsi Bash agar fixture berjalan pada `/tmp` noexec; ini bukan 102 rotasi live. |
+| Build dan suite penuh | Image offline-tests dibangun dengan dependency terkunci. Run non-root/read-only/network none: 445 passed, 2 Windows-only skips, 5 integration deselected, 9 subtests passed, coverage Python 85%, satu warning TestClient/httpx. Coverage tersebut mengukur package Python, bukan branch Bash. |
+| Pemeriksaan statis | `bash -n`, Ruff check, Ruff format 49 file, serta mypy Linux dan target statis win32 pada 27 source files lulus. |
+| Profil privat | Profil manual baru cocok dengan target koneksi runtime yang disetujui, tanpa shell-source/interpolasi credential. Round-trip quote/backslash/dollar/whitespace/Unicode/newline lulus. Pin image dan profil baru 0600; bootstrap profile lama tidak ditimpa. |
+| Smoke Oracle read-only | `status` melalui launcher asli lulus: KEY_ID 1 ACTIVE, VERSION 3, tanpa PENDING/GRACE/issues. Due tetap 3 November 2026 20:19:52 WIB dan expiry 4 November 2026 20:19:52 WIB. Tidak ada prepare/confirm/activate/revoke, pembacaan karyawan, atau penulisan metadata key. |
+| Privasi dan preservasi | Scan 77 calon file publikasi, log API, dan audit status tidak menemukan raw key, master key, digest key, atau credential DB. Byte master/ciphertext/delivery dan bootstrap profile lama tetap sama. Source aplikasi, SQL, dependency/lockfile, serta konfigurasi runtime API tidak berubah; container API tetap berhenti. |
+
+Pemeriksaan akhir juga meluluskan 161 tautan/anchor lokal, sintaks contoh Bash/JSON, `git diff --check`, serta 37 source-contract pada dokumen final. Signature/code fence PRD, 12 FR, 16 acceptance requirements, dan tiga milestone tetap terjaga. Jumlah source-contract adalah subset suite, bukan tambahan untuk dijumlahkan.
+
+Gate backend/copy: Hard Gate PASS berdasarkan scan privasi dan preservasi material; Purpose Gate PASS karena launcher memakai CLI/engine existing tanpa service atau schema tambahan; Quality Locks PASS berdasarkan tes/statis/tautan di atas. Liveliness dan pemeriksaan UI tidak berlaku: tidak ada antarmuka atau aset visual yang dibuat, dan tidak ada klaim klik browser.
+
+Batas: setup ini tidak membuktikan cutover normal/darurat Oracle live, concurrency, rollback/unknown commit live, atau kesiapan production. Read-only status bukan tes autentikasi HTTP setelah restart. Tidak ada timer/alert eksternal yang dipasang dan tidak ada staging/commit/push Git. Operator tetap harus menyiapkan distribusi dan menjalankan rotasi sebelum expiry; jadwal tidak diperpanjang oleh mode manual. M3 memerlukan scheduler, pengamanan composite tick setelah hasil tidak pasti, distribusi/ack, monitoring, dan recovery teruji.
 
 ## Bootstrap API Key dan CRUD HTTP live, 27 Oktober 2026 (Asia/Jakarta)
 
@@ -183,7 +216,7 @@ Urutan mengikuti PRD bagian 11. Hasil parsial tidak menutup requirement secara k
 | Milestone | Bukti saat ini | Gate terbuka |
 |---|---|---|
 | M1 Auth MVP | Fondasi/offline, storage/read/auth Oracle, bootstrap CLI, private store Linux, dan CRUD HTTP live | Bootstrap concurrent, permission failure injection live, outage auth/503, privilege minimum, dan sign-off production |
-| M2 Rotation Engine/manual/emergency | Offline waktu terkontrol, readiness/race/version, grace/emergency, dan rekonsiliasi | Concurrency/rollback/unknown commit Oracle serta distribusi nyata; LAST_OPERATION_ID yang tertimpa memerlukan review manual |
+| M2 Rotation Engine/manual/emergency | Offline lifecycle/rekonsiliasi, 102 kasus launcher, smoke read-only, dan satu cutover tanpa grace beserta penolakan key lama pada Oracle | Concurrency/rollback/unknown commit Oracle serta distribusi nyata; LAST_OPERATION_ID yang tertimpa memerlukan review manual |
 | M3 External Automation/distribution/monitoring/recovery | Tick staging 24 jam sebelum due dan runbook tersedia | Scheduler menit aktual, kanal/provider/ack, alert pending-unready, restore/restart; tetap semi-otomatis sebelum distribusi/ack otomatis terbukti |
 
 CRUD, Docker, TLS, pool/worker, privilege minimum, audit dependency/image, backup/restore, dan p95 tetap bagian penerimaan project. Build yang lulus tidak menutup gate tersebut.

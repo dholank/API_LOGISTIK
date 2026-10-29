@@ -1,9 +1,9 @@
 # API_LOGISTIK: Product Requirements Document (PRD)
 ## REST API Integration: FastAPI, Oracle Database & Docker
 
-**Versi:** 1.3, tambahan fixture dummy karyawan manual yang disetujui
+**Versi:** 1.4, workflow rotasi API Key manual terlebih dahulu
 
-**Tanggal:** 27 Oktober 2026
+**Tanggal:** 29 Oktober 2026
 
 **Status:** Bootstrap key dan CRUD HTTP live pada fixture berizin sudah diuji; penerimaan production belum selesai.
 
@@ -13,7 +13,7 @@
 
 **Target database:** Oracle Database 19c Enterprise Edition.
 
-Requirement dalam PRD ini tetap berlaku meskipun sebagian pengujian telah lulus. [Acceptance](<ACCEPTANCE.md>) mencatat metode, hasil, dan batas bukti: 343 tes offline lulus, bootstrap key ID 1 dari VERSION 0 ke 3, serta 24 pemeriksaan HTTP live. Fixture sementara 91991 sudah dihapus; 10 dummy 90001 sampai 90010 tetap utuh. Rotasi/grace, concurrency, outage, restart dengan key aktif, TLS client, dan p95 belum membuktikan kesiapan production.
+Requirement dalam PRD ini tetap berlaku meskipun sebagian pengujian telah lulus. [Acceptance](<ACCEPTANCE.md>) mencatat metode, hasil, dan batas bukti: 445 tes offline lulus, bootstrap key ID 1 dari VERSION 0 ke 3, serta 24 pemeriksaan HTTP live. Fixture sementara 91991 sudah dihapus; 10 dummy 90001 sampai 90010 tetap utuh. Rotasi/grace, concurrency, outage, restart dengan key aktif, TLS client, dan p95 belum membuktikan kesiapan production.
 
 ## 1. Project Overview
 
@@ -260,7 +260,9 @@ Skema legacy memakai `CLIENT_ID`, `ACTIVE_AT`, `EXPIRED_AT`, dan opsional `LAST_
 
 ### 7.4 Distribusi, readiness, dan transaksi
 
-Python menyiapkan kandidat PENDING; operator menyalurkan raw key melalui kanal rahasia terpisah dan mengonfirmasi kesiapan sebelum aktivasi. Kanal distribusi/ack seluruh client masih harus dipilih. Scheduler tetap semi-otomatis sampai distribusi dan konfirmasi juga otomatis; pemicu waktu saja bukan rotasi otomatis end-to-end.
+Tahap aktif memakai rotasi manual oleh operator berizin: `status → prepare → export → confirm-distributed → activate → status` melalui CLI Python. Python menyiapkan kandidat PENDING; operator menyalurkan raw key melalui kanal rahasia terpisah dan mengonfirmasi kesiapan seluruh client sebelum aktivasi. Manual tidak menghapus due, expiry, readiness, atau pemeriksaan VERSION. Tidak ada scheduler pada tahap ini. Launcher Docker dan audit privat dijelaskan di [runbook](<OPERATIONS.md#alur-utama-rotasi-manual>).
+
+M3 tetap menyiapkan pemicu eksternal, distribusi, acknowledgment, alert, dan recovery. Kanal distribusi/ack otomatis masih harus dipilih. Jika hanya pemicu waktunya yang otomatis, operasi masih semi-otomatis; engine serta schema existing tetap digunakan.
 
 Setiap prepare, konfirmasi readiness, aktivasi, dan revoke mengunci row GLOBAL menggunakan `SELECT ... FOR UPDATE`, memeriksa candidate ID tepat serta `VERSION` yang diharapkan, dan memperbarui key/state dalam satu transaksi SQL biasa milik Python. Konfirmasi readiness harus terikat kandidat dan versi yang sama; kandidat diganti atau versi stale berarti konfirmasi ulang, bukan aktivasi berdasarkan boolean generik. Gunakan operation ID untuk rekonsiliasi retry; rollback saat gagal, dan jangan mengulang mutasi secara buta ketika hasil commit tidak diketahui.
 
