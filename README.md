@@ -6,9 +6,11 @@ Python menangani HTTP, validasi bentuk input, autentikasi Global API Key, dan tr
 
 ## Status project
 
-API berjalan di Docker WSL2 dan sudah diuji terhadap Oracle 19.26 pada target FreeSQL pengguna. Bootstrap Global API Key dan satu siklus CRUD HTTP berizin lulus. Fixture sementara sudah dihapus; 10 dummy awal tetap utuh. Health check, dokumentasi HTTP, penolakan key tidak valid, dan stop/start proses juga sudah diuji.
+API berjalan di Docker WSL2 dan sudah diuji terhadap Oracle 19.26 pada target FreeSQL pengguna. Bootstrap, CRUD HTTP, dan satu cutover key tanpa grace berizin lulus. Pada 30 Oktober 2026, pengujian restart dan recreate container dengan image existing menunjukkan key baru tetap 200 dan key lama 401, tanpa perubahan metadata atau material key. Tes koneksi DB gagal pada sandbox tanpa jaringan menghasilkan 503 sebelum lookup/callback bisnis; health tetap 200 dan missing/malformed key 401. Fixture CRUD sementara sudah dihapus; health, dokumentasi HTTP, serta 10 dummy awal telah diperiksa pada tahap sebelumnya.
 
-Project belum siap production. Pengujian lanjutan masih mencakup rotasi/grace, concurrency, expiry/revoke, outage database, restart dengan key aktif, TLS client, distribusi otomatis, recovery, dan p95. Scheduler belum dipasang. Rincian hasil dan pekerjaan yang tersisa ada di [acceptance](<docs/ACCEPTANCE.md>).
+Pada 1 November 2026, image API development dibangun ulang dengan perbaikan prepare/preflight dan container baru dibiarkan running/healthy. Sepuluh HTTP checks tanpa autentikasi Oracle lulus; environment dan hardening tetap. Pin image launcher operator belum diperbarui, sehingga launcher belum memakai perbaikan tersebut.
+
+Project belum siap production. Pengujian lanjutan masih mencakup normal grace, concurrency, expiry boundary, sesi/query database putus setelah terhubung, autentikasi setelah upgrade image, host recovery, TLS client, distribusi otomatis, backup/restore, dan p95. Scheduler belum dipasang. Rincian hasil dan pekerjaan yang tersisa ada di [acceptance](<docs/ACCEPTANCE.md>).
 
 ## Menjalankan API di WSL2
 

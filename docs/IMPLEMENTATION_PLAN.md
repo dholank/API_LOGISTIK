@@ -2,7 +2,7 @@
 
 [PRD](<PRD.md>) menetapkan requirement serta registry tunggal nama, signature, dan path SQL pada bagian 15/16. [Arsitektur](<ARCHITECTURE.md>) menetapkan batas modul. Rencana ini membagi subsystem Global API Key menjadi tepat tiga milestone; requirement CRUD, Docker, TLS, dan penerimaan project tetap berlaku di luar pembagian tersebut.
 
-Source API/CLI, sembilan SQL termasuk fixture dummy opsional, tes, dan Docker tersedia. Runtime terkunci pada Python 3.15.2, python-oracledb 26.0.1, dan uv 0.13.5 dengan satu lockfile. [Acceptance](<ACCEPTANCE.md>) mencatat 445 tes offline lulus, bootstrap key ID 1 dari VERSION 0 ke 3, serta 24 pemeriksaan HTTP live. Fixture sementara 91991 sudah dihapus dan 10 dummy 90001 sampai 90010 tetap utuh. Bukti ini tidak menutup seluruh gate milestone atau membuktikan kesiapan production.
+Source API/CLI, sembilan SQL termasuk fixture dummy opsional, tes, dan Docker tersedia. Runtime terkunci pada Python 3.15.2, python-oracledb 26.0.1, dan uv 0.13.5 dengan satu lockfile. [Acceptance](<ACCEPTANCE.md>) mencatat 475 tes offline lulus, bootstrap key ID 1 dari VERSION 0 ke 3, serta 24 pemeriksaan HTTP live. Fixture sementara 91991 sudah dihapus dan 10 dummy 90001 sampai 90010 tetap utuh. Bukti ini tidak menutup seluruh gate milestone atau membuktikan kesiapan production.
 
 Tahap aktif yang disetujui pada 29 Oktober 2026 adalah M2 manual terlebih dahulu. [Launcher operator](<../scripts/api_key_operator.sh>) menjalankan `status → prepare → export → confirm-distributed → activate → status` sebagai langkah terpisah dengan profil, pin image, material key, dan audit privat di luar project. Operator tetap wajib memenuhi due A+7/expiry A+8 serta readiness ID+VERSION. Setup launcher tidak mengaktifkan API, menerbitkan kandidat, merotasi key live, atau memasang timer. Rincian operasional ada di [runbook manual](<OPERATIONS.md#alur-utama-rotasi-manual>).
 
@@ -30,7 +30,7 @@ Fondasinya mencakup app/settings/pool, liveness tanpa Oracle, error mapping, req
 
 Python membuat key dengan `secrets.token_urlsafe(32)`, menghitung SHA-256 UTF-8 melalui `hashlib.sha256`, dan memvalidasi lowerhex64, status, waktu, serta pointer GLOBAL. Raw key tidak di-trim atau diubah case. Material disimpan secara aman di luar Oracle/repository sebelum bootstrap; konfirmasi distribusi mendahului aktivasi. Lock singleton mencegah bootstrap ganda. Aktivasi A menetapkan due A+7 hari dan expiry asli A+8 hari.
 
-Bukti saat ini: fondasi dan tes offline tersedia; storage/read/auth Oracle, bootstrap CLI, private store Linux, dan CRUD HTTP live sudah diuji pada scope berizin. Bootstrap concurrent, outage auth, failure injection permission, serta privilege minimum masih memerlukan bukti live.
+Bukti saat ini: fondasi/offline, storage/read/auth Oracle, bootstrap, private store, dan CRUD HTTP live tersedia pada scope berizin. Sandbox image existing tanpa jaringan meluluskan 10 HTTP checks saat TCPS loopback menolak koneksi: enam 503, dua 401, dua health 200; enam upaya koneksi tanpa keberhasilan, lookup auth, atau callback bisnis. Bootstrap concurrent, sesi/query auth putus setelah terhubung, pool exhaustion, failure injection permission, serta privilege minimum masih memerlukan bukti terpisah.
 
 Kriteria penerimaan M1 tetap mencakup:
 
@@ -52,7 +52,7 @@ Engine Python dan jalur operator terotorisasi menangani prepare, readiness, akti
 
 Aktivasi A menetapkan due A+7 hari dan expiry asli A+8 hari. Cutover normal B memberi key lama yang masih live status GRACE sampai `min(expiry_asli, B+24 jam)`, tanpa memperpanjang expiry saat terlambat atau mengaktifkan kembali EXPIRED/REVOKED. Operator boleh revoke segera tanpa replacement, dengan risiko outage. Aktivasi darurat memerlukan replacement baru yang sudah dikonfirmasi siap dan mencabut seluruh old live, termasuk GRACE, dalam transaksi yang sama. Tidak ada overlap darurat atau bypass.
 
-Bukti saat ini: tes waktu terkontrol, readiness/race/version, grace/emergency, dan rekonsiliasi offline tersedia. Launcher manual memiliki 102 kasus terisolasi. Setelah setup read-only, satu cutover live tanpa grace yang diizinkan mengaktifkan ID 21, mencabut ID 1, dan mencapai VERSION 6 setelah readiness terkonfirmasi. Pool Oracle baru serta dependency autentikasi menolak key lama dan menerima key baru, tanpa HTTP/API start. Bukti ini belum menutup normal grace, emergency dengan old GRACE, concurrency, rollback, atau unknown commit live; rincian waktu dan batas ada di [acceptance](<ACCEPTANCE.md>).
+Bukti saat ini: tes waktu terkontrol, readiness/race/version, grace/emergency, dan rekonsiliasi offline tersedia. Launcher manual memiliki 102 kasus terisolasi. Setelah setup read-only, satu cutover live tanpa grace yang diizinkan mengaktifkan ID 21, mencabut ID 1, dan mencapai VERSION 6 setelah readiness terkonfirmasi. Pool Oracle baru serta dependency autentikasi menolak key lama dan menerima key baru pada tahap cutover, tanpa HTTP/API start. Pengujian lanjutan 30 Oktober meluluskan delapan pemeriksaan HTTP sebelum/sesudah restart: key 21 tetap 200, revoked 1 tetap 401, metadata/material key tidak berubah. Bukti ini belum menutup normal grace, emergency dengan old GRACE, concurrency, rollback, atau unknown commit live; rincian waktu dan batas ada di [acceptance](<ACCEPTANCE.md>).
 
 Kriteria penerimaan M2:
 
@@ -68,7 +68,7 @@ Requirement: FR-004 serta availability, reliability, dan privacy PRD. Seluruh 16
 
 Scheduler eksternal memicu engine Python, bukan DBMS_SCHEDULER atau routine autentikasi/rotasi Oracle. Due mengikuti A+7 hari, bukan jadwal Senin tetap. Distribusi raw key melalui kanal rahasia dan acknowledgment readiness juga harus otomatis sebelum sistem disebut otomatis end-to-end. Selama distribusi/konfirmasi masih manual, operasi tetap semi-otomatis.
 
-Bukti saat ini terbatas pada jalur tick dan runbook. Scheduler aktual, provider distribusi/ack, alert, restart dengan key aktif, dan recovery production belum terverifikasi.
+Jalur tick dan runbook tersedia. Restart proses serta recreate API dengan image existing sudah lulus pada 30 Oktober: key aktif tetap diterima, revoked tetap ditolak, dan metadata/material eksternal tetap. Pada 1 November, update image development serta HTTP tanpa autentikasi Oracle lulus; API dibiarkan running/healthy dan pin image operator tidak berubah. Scheduler aktual, provider distribusi/ack, alert, autentikasi setelah upgrade image, host recovery, serta backup/restore production belum terverifikasi.
 
 Kriteria penerimaan M3:
 

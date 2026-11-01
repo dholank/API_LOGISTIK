@@ -9,6 +9,7 @@ from api_logistik.db.karyawan_repository import KaryawanRepository
 from api_logistik.db.transactions import transaction
 from api_logistik.main import create_app
 from api_logistik.security.api_keys import generate_api_key
+from api_logistik.security.key_rotation import RotationError
 
 pytestmark = pytest.mark.integration
 
@@ -107,15 +108,27 @@ def test_concurrent_prepare_has_one_canonical_pending_candidate(isolated_oracle)
         barrier = Barrier(2)
         first, _ = rig.operator(rig.pool, barrier)
         second, _ = rig.operator(other_pool, barrier)
+
+        def prepare(operator):
+            try:
+                return rig.prepare(operator, rig.initial.version)
+            except RotationError as exc:
+                if exc.code != "STALE_VERSION":
+                    raise
+                return None
+
         # put() runs before the GLOBAL lock; both independent sessions must reach it.
         with ThreadPoolExecutor(max_workers=2) as executor:
-            results = list(executor.map(rig.prepare, (first, second)))
+            results = list(executor.map(prepare, (first, second)))
+        probe.check(results.count(None) == 1, "ONE_STALE_PREPARE_MUST_BE_REJECTED")
         with rig.pool.connection() as connection:
             with transaction(connection, write=False):
                 state = ApiKeyRepository(connection).read_state()
                 probe.check(state.pending_key_id is not None, "CANONICAL_PENDING_REQUIRED")
                 same_candidate = all(
-                    result.pending_key_id == state.pending_key_id for result in results
+                    result.pending_key_id == state.pending_key_id
+                    for result in results
+                    if result is not None
                 )
                 probe.check(same_candidate, "CONCURRENT_PREPARE_POINTER_DIVERGENCE")
                 probe.check(

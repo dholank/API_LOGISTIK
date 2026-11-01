@@ -13,7 +13,7 @@
 
 **Target database:** Oracle Database 19c Enterprise Edition.
 
-Requirement dalam PRD ini tetap berlaku meskipun sebagian pengujian telah lulus. [Acceptance](<ACCEPTANCE.md>) mencatat metode, hasil, dan batas bukti: 445 tes offline lulus, bootstrap key ID 1 dari VERSION 0 ke 3, serta 24 pemeriksaan HTTP live. Fixture sementara 91991 sudah dihapus; 10 dummy 90001 sampai 90010 tetap utuh. Rotasi/grace, concurrency, outage, restart dengan key aktif, TLS client, dan p95 belum membuktikan kesiapan production.
+Requirement dalam PRD ini tetap berlaku meskipun sebagian pengujian telah lulus. [Acceptance](<ACCEPTANCE.md>) mencatat metode, hasil, dan batas bukti: 475 tes offline lulus, bootstrap key ID 1 dari VERSION 0 ke 3, serta 24 pemeriksaan HTTP live. Fixture sementara 91991 sudah dihapus; 10 dummy 90001 sampai 90010 tetap utuh. Pada 30 Oktober, run restart dan run recreate dengan image existing masing-masing meluluskan delapan pemeriksaan HTTP: key baru diterima, revoked ditolak, serta metadata/material key tetap. Sandbox koneksi DB tidak terjangkau juga meluluskan 10 HTTP checks dengan nol callback bisnis, tanpa mengganggu Oracle asli. Normal grace, concurrency, putus sesi/query setelah terhubung, upgrade image/host recovery, TLS client, dan p95 tetap memerlukan bukti production.
 
 ## 1. Project Overview
 

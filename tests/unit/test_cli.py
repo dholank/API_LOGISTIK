@@ -213,7 +213,7 @@ def test_prepare_stores_material_outside_lock_then_registers_and_commits_once(ha
     assert not any(event[0] == "store_put" for event in pool.events[len(before) :])
 
 
-def test_double_prepare_loser_preserves_winner_candidate_readiness_and_version(harness):
+def test_double_prepare_loser_rejects_stale_version_and_preserves_winner(harness):
     operator, pool, store = harness()
     winner = RotationState(
         pending_key_id=8,
@@ -228,7 +228,9 @@ def test_double_prepare_loser_preserves_winner_candidate_readiness_and_version(h
         pool.keys[8] = key(8)
 
     store.on_put = winner_commits
-    assert operator.prepare(OP, 0) == winner
+    with pytest.raises(RotationError) as error:
+        operator.prepare(OP, 0)
+    assert error.value.code == "STALE_VERSION"
     assert pool.state == winner
     assert pool.keys[8].status == "PENDING"
     assert not any(event[0] in {"insert", "save_state", "save_key"} for event in pool.events)
@@ -259,12 +261,52 @@ def test_prepare_store_failure_never_acquires_mutation_lock(harness, monkeypatch
     assert pool.commits == 0 and pool.keys == {}
 
 
-def test_pending_candidate_prepare_retry_does_not_reset_distribution(harness):
+def test_existing_pending_prepare_preserves_candidate_and_distribution(harness):
+    state = prepared_state(ready=True)
+    candidate = key(3)
+    operator, pool, store = harness(state, [candidate])
+    material = store.material.copy()
+    assert operator.prepare(OP, 4) == state
+    assert pool.state == state and pool.keys == {3: candidate}
+    assert store.material == material
+    assert not any(event[0] == "store_put" for event in pool.events)
+
+
+@pytest.mark.parametrize("version", [0, 3])
+def test_existing_pending_prepare_rejects_stale_version(harness, version):
+    state = prepared_state(ready=True)
+    candidate = key(3)
+    operator, pool, store = harness(state, [candidate])
+    with pytest.raises(RotationError) as error:
+        operator.prepare(OP, version)
+    assert error.value.code == "STALE_VERSION"
+    assert pool.state == state and pool.keys == {3: candidate}
+    assert not any(event[0] == "store_put" for event in pool.events)
+    assert store.material[DIGEST] == RAW and pool.commits == 0
+
+
+def test_existing_pending_prepare_rechecks_version_under_lock(harness):
     state = prepared_state(ready=True)
     operator, pool, _ = harness(state, [key(3)])
-    assert operator.prepare(OP, 4) == state
-    assert pool.events == [("acquire", 1), ("read", 1), ("release", 1)]
-    assert pool.commits == 0
+    newer = replace(state, version=5)
+
+    def concurrent_confirmation(connection):
+        pool.state = connection.state = newer
+
+    pool.lock_hook = concurrent_confirmation
+    with pytest.raises(RotationError) as error:
+        operator.prepare(OP, 4)
+    assert error.value.code == "STALE_VERSION"
+    assert pool.state == newer and pool.commits == 0
+
+
+def test_prepare_same_operation_retry_keeps_canonical_candidate(harness):
+    state = replace(prepared_state(), last_operation_id=OP, last_operation_at=NOW)
+    operator, pool, store = harness(state, [key(3)])
+    assert operator.prepare(OP, 0) == state
+    assert pool.state == state and pool.keys[3].status == "PENDING"
+    assert not any(event[0] == "store_put" for event in pool.events)
+    assert store.material[DIGEST] == RAW and pool.commits == 0
 
 
 def test_replace_pending_revokes_old_candidate_and_clears_readiness_atomically(harness):

@@ -128,6 +128,8 @@ scripts/api_key_operator.sh prepare --expected-version VERSION_STATUS --reason m
 
 Prepare membuat API Key baru berstatus PENDING dan menyimpan materialnya terenkripsi. Key lama belum dimatikan. Jika kandidat sudah ada, review ID dan distribusinya sebelum mengganti kandidat. Jangan menganggap ID identity selalu berurutan.
 
+VERSION stale menghasilkan exit code 2 meski kandidat PENDING sudah ada. Baca ulang status dan review kandidat beserta distribusinya sebelum memutuskan operasi berikutnya; jangan mengganti VERSION otomatis agar command lolos. Retry UUID operasi yang sama tidak membuat key baru.
+
 ```bash
 scripts/api_key_operator.sh status
 ```

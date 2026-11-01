@@ -178,11 +178,19 @@ class KeyOperator:
         replace_pending: bool = False,
     ) -> RotationState:
         with self.pool.connection() as connection:
-            before = ApiKeyRepository(connection).read_state()
-        if before.last_operation_id == operation:
-            return before
-        if before.pending_key_id is not None and not replace_pending:
-            return before
+            repo = ApiKeyRepository(connection)
+            before = repo.read_state()
+            if before.last_operation_id == operation or (
+                before.pending_key_id is not None and not replace_pending
+            ):
+                with transaction(connection, write=False):
+                    before = repo.read_state(lock=True)
+                    if before.last_operation_id == operation:
+                        return before
+                    if expected_version is not None and expected_version != before.version:
+                        raise RotationError("STALE_VERSION", "Rotation version does not match.")
+                    if before.pending_key_id is not None and not replace_pending:
+                        return before
         if expected_version is not None and expected_version != before.version:
             raise RotationError("STALE_VERSION", "Rotation version does not match.")
         digest = self._secret_store().put(generate_api_key())
@@ -190,10 +198,10 @@ class KeyOperator:
         def register(repo: ApiKeyRepository, state: RotationState, now: datetime) -> Transition:
             if state.last_operation_id == operation:
                 return Transition(state, (), False)
-            if state.pending_key_id is not None and not replace_pending:
-                return Transition(state, (), False)
             if expected_version is not None and state.version != expected_version:
                 raise RotationError("STALE_VERSION", "Rotation version does not match.")
+            if state.pending_key_id is not None and not replace_pending:
+                return Transition(state, (), False)
             original = state
             changed: tuple[KeyRecord, ...] = ()
             if state.pending_key_id is not None:

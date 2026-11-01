@@ -47,6 +47,15 @@ Periksa status objek dan compile errors setelah penerapan. Tes source tidak memb
 
 Jika suatu view tidak dapat dibaca, laporkan nama view dan minta DBA memeriksa. Jangan meminta privilege ANY/DBA hanya agar semua query berhasil. Filter ALL_* memperlihatkan owner agar objek pada schema berbeda tidak disangka target yang sama.
 
+### Preflight Python read-only
+
+Package menyediakan `api-logistik-preflight --env-file PRIVATE_PROFILE` untuk pemeriksaan metadata, tanpa DDL, function CRUD, atau nilai key. Jalankan hanya pada target read-only yang diizinkan.
+
+`ready_for_further_integration=true` mensyaratkan tipe/status objek yang benar, kolom kanonis beserta tipe/precision/scale/nullability, panjang teks BYTE, marker identity KEY_ID, constraint bernama enabled/validated, kolom PK/unique/FK dan referensi FK kanonis, signature function termasuk return/default parameter, charset AL32UTF8, serta satu row GLOBAL. Mismatch kolom/constraint/signature muncul pada `schema_issues`; CLI mengembalikan exit code 2 bila belum siap dan 1 untuk kegagalan pemeriksaan. Kolom legacy atau tambahan yang belum disetujui tidak diterima sebagai schema kanonis.
+
+Ini gate struktur metadata untuk integrasi berikutnya, bukan kelulusan production. Operator/DBA tetap memeriksa predicate CHECK, mode generation identity/default, privilege minimum, trigger/writer legacy, target schema/PDB, dan perilaku function/transaksi. Preflight tidak menafsirkan ulang predicate SQL atau membuktikan koneksi/transaksi pada target lain.
+
+
 ## Jalur penerapan
 
 ### A. Schema baru: kedua tabel key belum ada
@@ -165,3 +174,7 @@ Pisahkan bukti source, kompilasi, transaksi live, dan deployment. DDL atau seed 
 - [Oracle 19c: MERGE](<https://docs.oracle.com/en/database/oracle/oracle-database/19/sqlrf/MERGE.html>)
 - [Oracle 19c: object grants yang diterima](<https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/ALL_TAB_PRIVS_RECD.html>)
 - [Oracle 19c: column grants yang diterima](<https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/ALL_COL_PRIVS_RECD.html>)
+- [Oracle 19c: metadata kolom, BYTE semantics, dan identity](<https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/ALL_TAB_COLUMNS.html>)
+- [Oracle 19c: tipe/status/validasi constraint](<https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/ALL_CONSTRAINTS.html>)
+- [Oracle 19c: kolom constraint](<https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/ALL_CONS_COLUMNS.html>)
+- [Oracle 19c: signature dan default parameter](<https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/ALL_ARGUMENTS.html>)
