@@ -116,6 +116,8 @@ ROOT/                       owner operator, 0700
 
 Profil privat memuat trio Oracle yang disetujui, `OPERATOR_AUTHORIZED=true`, `KEY_SECRET_STORE_DIR=ROOT/ciphertext`, dan `KEY_ENCRYPTION_KEY_FILE=ROOT/master.key`, dengan path absolut yang sama di host/container. Jangan memakai contoh `ROOT` secara literal, mengirim credential lewat argv, atau shell-source profil. Jangan overwrite bootstrap profile atau master key existing. Simpan profil, pin, dan material privat melalui akses operator, bukan Git. Permission direktori/file yang tidak aman, symlink, atau pin yang bukan image ID ditolak.
 
+Pin operator tidak mengikuti tag API otomatis. Pada 2 November 2026, pin existing diperbarui secara eksplisit ke image yang telah diverifikasi; launcher `status` serta GET key aktif/revoked pada API baru lulus tanpa rotasi atau perubahan metadata/material. Perubahan pin tetap memerlukan pemeriksaan image, target, permission, dan opsi pemulihan, bukan penggantian UUID/image setiap menjalankan command. Bukti dan batas ada di [acceptance pin/operator](<ACCEPTANCE.md#pin-operator-dan-autentikasi-image-baru-2-november-2026>).
+
 ```bash
 scripts/api_key_operator.sh --help
 scripts/api_key_operator.sh status

@@ -68,7 +68,7 @@ Requirement: FR-004 serta availability, reliability, dan privacy PRD. Seluruh 16
 
 Scheduler eksternal memicu engine Python, bukan DBMS_SCHEDULER atau routine autentikasi/rotasi Oracle. Due mengikuti A+7 hari, bukan jadwal Senin tetap. Distribusi raw key melalui kanal rahasia dan acknowledgment readiness juga harus otomatis sebelum sistem disebut otomatis end-to-end. Selama distribusi/konfirmasi masih manual, operasi tetap semi-otomatis.
 
-Jalur tick dan runbook tersedia. Restart proses serta recreate API dengan image existing sudah lulus pada 30 Oktober: key aktif tetap diterima, revoked tetap ditolak, dan metadata/material eksternal tetap. Pada 1 November, update image development serta HTTP tanpa autentikasi Oracle lulus; API dibiarkan running/healthy dan pin image operator tidak berubah. Scheduler aktual, provider distribusi/ack, alert, autentikasi setelah upgrade image, host recovery, serta backup/restore production belum terverifikasi.
+Jalur tick dan runbook tersedia. Restart/recreate image existing lulus pada 30 Oktober dan update image development lulus pada 1 November. Pada 2 November, pin operator diperbarui ke image yang sama; status launcher serta GET key aktif 200/revoked 401 lulus, dengan metadata/material tetap dan tanpa restart API. Scheduler aktual, provider distribusi/ack, alert, CRUD tulis pada image baru, host recovery, serta backup/restore production belum terverifikasi.
 
 Kriteria penerimaan M3:
 

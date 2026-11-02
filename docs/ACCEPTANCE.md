@@ -6,7 +6,7 @@ Project belum siap production. Dokumen ini memisahkan bukti source, tes offline,
 
 ## Ringkasan terkini
 
-Snapshot 1 November 2026 mencakup perbaikan offline dan deployment image API development baru; bukti Oracle live terakhir tetap 30 Oktober 2026, zona waktu Asia/Jakarta. CRUD HTTP diuji pada 27 Oktober, cutover tanpa grace pada 29 Oktober, lalu autentikasi sebelum/sesudah restart dan recreate container pada 30 Oktober. Bukti setiap tahap dibatasi pada pemeriksaan yang dicatat:
+Snapshot 2 November 2026 mencakup pembaruan pin operator dan verifikasi autentikasi/READ Oracle pada image API baru, zona waktu Asia/Jakarta. CRUD tulis terakhir diuji pada 27 Oktober, cutover tanpa grace pada 29 Oktober, restart/recreate image existing pada 30 Oktober, dan deployment image baru pada 1 November. Bukti setiap tahap dibatasi pada pemeriksaan yang dicatat:
 
 | Area | Bukti terakhir | Batas |
 |---|---|---|
@@ -19,8 +19,30 @@ Snapshot 1 November 2026 mencakup perbaikan offline dan deployment image API dev
 | Restart API dengan key aktif | Proses berubah pada container/image existing yang sama; metadata Oracle dan material privat tetap, tanpa mint ulang; API kembali berhenti | Bukan recreate container, restart host, atau backup/restore |
 | Recreate API dengan key aktif | Container ID baru, image/env/security tetap; 8 pemeriksaan HTTP lulus dan metadata/material key tidak berubah | Bukan upgrade image, restart host, atau restore material |
 | Koneksi DB gagal pada sandbox | 10 HTTP checks: enam 503 DB_UNAVAILABLE, dua 401, dua health 200; enam upaya koneksi, nol koneksi/lookup/callback bisnis | Endpoint TCPS loopback tidak terjangkau, bukan pemutusan Oracle aktif atau transaksi berjalan |
-| Update image API development | Build runtime baru, kecocokan dua modul perbaikan, smoke sandbox, serta 10 HTTP checks pada container baru lulus; API dibiarkan running/healthy | Tanpa key valid atau pengujian Oracle; pin image launcher operator tidak berubah |
+| Update image API development, 1 November | Build runtime baru, kecocokan dua modul perbaikan, smoke sandbox, serta 10 HTTP checks pada container baru lulus; API dibiarkan running/healthy | Pada tahap deployment ini belum ada key valid/Oracle atau perubahan pin operator; verifikasi lanjutan dicatat di bawah |
+| Pin operator dan auth image baru, 2 November | Launcher memakai image baru; status tetap VERSION 6/key aktif 21; GET dummy memakai key 21 menghasilkan 200 dan key revoked 1 menghasilkan 401; metadata/material tetap | Read-only, tanpa rotasi, CRUD tulis, restart API, atau gate recovery lainnya |
 | Operasi lanjutan | Rotasi normal/grace, sesi/query DB putus setelah terhubung, concurrency, TLS client, host recovery/restore, dan p95 belum lengkap | Scheduler/distribusi otomatis belum dipasang atau dibuktikan |
+
+## Pin operator dan autentikasi image baru, 2 November 2026
+
+Pengguna mengizinkan dua langkah: memperbarui pin launcher operator dan memeriksa key aktif/revoked melalui GET read-only. Run `6721f2bf-2c9d-4582-a77a-ee65a6368a3c` selesai **09:23:34 WIB**. API tetap container `0ea6f790b0ca`, image dan waktu start tidak berubah, running/healthy.
+
+Pin privat `operator-image.id` berubah dari `sha256:41925437208e0d49db6179584940c7537ba4390ddf55cb251fcee15675a4d551` ke `sha256:6dea12e211ac05babaf1a1dde7983a2ac870adfe641f09c3cb4b64784bfae403`. File tetap milik operator dengan permission 0600 dan bukan symlink/hardlink. Image lama tetap tersedia sebagai opsi pemulihan pin. Tidak ada build/pull, perubahan profil, atau restart API.
+
+Sebelum perubahan, target/credential API dan profil operator dibandingkan hanya di memori. Path store/master, permission direktori 0700/file 0600, serta hash file package terpasang `cli.py` dan `preflight.py` sesuai. Launcher asli menjalankan `status` memakai image lama, kemudian image baru, dan sekali lagi setelah HTTP: ketiganya lulus, dengan active ID 21, VERSION 6, tanpa PENDING/GRACE/issues. Audit launcher merekam image yang digunakan tanpa nilai key.
+
+| GET | Hasil |
+|---|---|
+| Health sebelum autentikasi | 200 SUCCESS |
+| Fixture dummy 90001 memakai key ACTIVE ID 21 | 200 SUCCESS; seluruh field cocok dengan fixture sintetis |
+| Fixture yang sama memakai key REVOKED ID 1 | 401 AUTH_001, data null |
+| Health sesudah autentikasi | 200 SUCCESS |
+
+Snapshot dari pool Oracle baru sebelum/sesudah HTTP sama persis untuk seluruh row key dan GLOBAL: dua row key, VERSION 6, status, hash, timestamp, pointer, dan operation metadata tetap. Context schema/PDB sama dan target Oracle 19c/AL32UTF8 terkonfirmasi tanpa menampilkan identitas login atau nilai key. Profil, master, ciphertext, dan delivery identik byte/owner/group/permission; hanya pin serta audit yang berubah.
+
+Metode: container pemeriksaan memakai image runtime yang sama, user operator non-root, filesystem read-only, tmpfs, cap-drop ALL, no-new-privileges, dan root privat di-mount read-only. GET memakai loopback pada network namespace API, tanpa proxy; material key existing didekripsi hanya di memori dan tidak dikirim melalui argv/stdout. Pool snapshot hanya melakukan SELECT dengan autocommit false dan rollback eksplisit. Pemeriksaan log terpisah tanpa jaringan mencocokkan raw key, master, digest, dan credential existing secara privat; tidak ditemukan kebocoran atau traceback. Empat request ID unik ditemukan pada log API. Audit verifikasi tersanitasi disimpan di luar repository dengan permission 0600.
+
+Batas: tidak ada prepare, export, confirm-distributed, activate, revoke, tick, DDL/DML, provisioning, atau tes tulis. Bukti ini menutup pin operator lama dan penolakan/penerimaan key existing pada image baru dalam scope GET; bukan bukti rotasi live pada image baru, normal grace, expiry boundary, concurrency, rollback/unknown commit, outage, TLS, p95, atau host recovery/restore. Suite offline 475 tes dan lima tes integrasi opt-in tidak dijalankan ulang. Acuan transaksi dibaca melalui Context7 untuk [python-oracledb 26.0.1](<https://github.com/oracle/python-oracledb/blob/v26.0.1/doc/src/user_guide/txn_management.rst>).
 
 ## Deployment image API development, 1 November 2026
 
@@ -276,7 +298,7 @@ Jangan menjumlahkan hasil Windows dan Linux yang menguji kasus beririsan. Ulangi
 | ID | Gate | Bukti saat ini | Sisa gate |
 |---|---|---|---|
 | FR-001 | HTTP REST | Offline dan smoke HTTP image lulus | Sign-off production |
-| FR-002 | Key pada semua endpoint bisnis | CRUD HTTP fixture lulus; GET key 21 diterima dan revoked 1 ditolak sebelum/sesudah restart | Expired live dan gate production |
+| FR-002 | Key pada semua endpoint bisnis | CRUD HTTP fixture lulus; GET key 21 diterima dan revoked 1 ditolak sebelum/sesudah restart serta pada image baru 2 November | Expired live dan gate production |
 | FR-003 | SHA-256, 401/503, fail-closed | Lookup/auth live; missing/wrong/PENDING/revoked 401; connect-failure sandbox menghasilkan 503 sebelum lookup/bisnis | Sesi/query auth putus setelah koneksi berhasil dan expiry boundary |
 | FR-004 | A+7/A+8, readiness/grace | Offline lifecycle, bootstrap, dan cutover tanpa grace/readiness live lulus | Concurrency, normal grace/retry, scheduler/distribusi otomatis |
 | FR-005 | CRUD lewat function | Source-contract dan empat mode HTTP Oracle live lulus | Privilege minimum dan target production |
@@ -284,7 +306,7 @@ Jangan menjumlahkan hasil Windows dan Linux yang menguji kasus beririsan. Ulangi
 | FR-007 | Validasi bisnis Oracle | Duplikat 409, missing 404, serta source-contract lulus | Seluruh validasi bisnis Oracle dan failure injection |
 | FR-008 | JSON konsisten | Offline, 24 pemeriksaan CRUD HTTP, dan 8 pemeriksaan auth/restart lulus pada tahap terpisah | Sign-off production |
 | FR-009 | Error/status | 200/201/401/404/409/422 live dan 503 connect-failure sandbox lulus | 500, putus sesi/query, unknown commit, rollback setelah kegagalan teknis |
-| FR-010 | Docker | Build/non-root/HTTP lulus; restart/recreate image existing mempertahankan autentikasi serta metadata/material key; update image development dan HTTP tanpa auth lulus pada 1 November | Autentikasi/CRUD Oracle setelah upgrade image, host recovery/restore, dan production |
+| FR-010 | Docker | Build/non-root/HTTP lulus; restart/recreate image existing mempertahankan autentikasi serta metadata/material key; deployment image baru, pin operator, serta auth/READ existing lulus pada 1 dan 2 November | CRUD tulis pada image baru, host recovery/restore, dan production |
 | FR-011 | Log/request ID | Offline, runtime hooks, serta scan log container lulus dalam scope | Proxy/operator production dan audit artefak lengkap |
 | FR-012 | Dokumentasi development | Export/schema dan HTTP docs lulus; default production-off diuji unit | Interaksi browser dan target deployment |
 
@@ -307,7 +329,7 @@ Urutan mengikuti PRD bagian 11. Hasil parsial tidak menutup requirement secara k
 | 11 | Kanal aman dan readiness ID+VERSION/GLOBAL lock | CLI bootstrap serta file privat/client lokal siap lulus; race diuji offline | Kanal production, ack semua penerima, stale candidate/version concurrent live |
 | 12 | Grace terbatas, revoke, emergency seluruh old live | Offline lulus; satu cutover tanpa grace live mencabut ACTIVE lama setelah replacement siap | Normal grace dan emergency dengan old GRACE live |
 | 13 | Rollback saat DB gagal | Offline lulus; live belum diuji | Failure injection, partial write, unknown commit/reconcile |
-| 14 | Restart mempertahankan state key | Restart/recreate image existing lulus: key 21 tetap 200, key 1 tetap 401; metadata/material dan jumlah row key tetap. Update image development tanpa auth juga lulus | Persistensi/auth key pada image baru, restart host, serta backup/restore belum diuji |
+| 14 | Restart mempertahankan state key | Restart/recreate image existing lulus. Pada image baru, key 21 tetap 200 dan key 1 tetap 401; snapshot metadata/material selama verifikasi 2 November tetap | Restart host, backup/restore, serta recovery/failure setelah upgrade belum diuji |
 | 15 | Swagger/dokumentasi development | Offline/schema dan HTTP container lulus | Interaksi browser; default production-off sudah diuji unit |
 | 16 | Credential/key tidak muncul di log/repository | Canary serta scan source/log live lulus dalam scope | Audit artefak/log rilis/proxy lengkap, tanpa mencetak secret |
 
@@ -317,7 +339,7 @@ Urutan mengikuti PRD bagian 11. Hasil parsial tidak menutup requirement secara k
 |---|---|---|
 | M1 Auth MVP | Fondasi/offline, auth/bootstrap/CRUD live, serta HTTP503 sandbox connect-failure tanpa callback bisnis | Bootstrap concurrent, permission failure, sesi/query auth putus, privilege minimum, dan production |
 | M2 Rotation Engine/manual/emergency | Offline lifecycle/rekonsiliasi, 102 kasus launcher, smoke read-only, dan satu cutover tanpa grace beserta penolakan key lama pada Oracle | Concurrency/rollback/unknown commit Oracle serta distribusi nyata; LAST_OPERATION_ID yang tertimpa memerlukan review manual |
-| M3 External Automation/distribution/monitoring/recovery | Tick/runbook tersedia; restart/recreate image existing mempertahankan state key eksternal; update image development tanpa auth lulus | Scheduler aktual, kanal/provider/ack, alert, autentikasi setelah upgrade image, host recovery dan restore; automation ditunda |
+| M3 External Automation/distribution/monitoring/recovery | Tick/runbook tersedia; restart/recreate image existing lulus; update image, pin operator, serta auth/READ existing pada image baru lulus | Scheduler aktual, kanal/provider/ack, alert, CRUD tulis pada image baru, host recovery dan restore; automation ditunda |
 
 CRUD, Docker, TLS, pool/worker, privilege minimum, audit dependency/image, backup/restore, dan p95 tetap bagian penerimaan project. Build yang lulus tidak menutup gate tersebut.
 
@@ -326,7 +348,7 @@ CRUD, Docker, TLS, pool/worker, privilege minimum, audit dependency/image, backu
 Lima tes pada [direktori integrasi](<../tests/integration/>) hanya dikoleksi/skip offline, belum dijalankan live. Read-only memerlukan `RUN_ORACLE_READONLY_INTEGRATION=1` dan `ORACLE_TEST_ENV_FILE` absolut di luar project. Writes juga memerlukan `RUN_ORACLE_WRITE_INTEGRATION=I_ACKNOWLEDGE_ISOLATED_EMPTY_SCHEMA`, profil test terpisah, schema/tabel fixture kosong terisolasi, dan izin. Profil runtime project dilarang untuk suite ini. Izin bootstrap/manual HTTP fixture tidak mengaktifkan suite atau memberi izin mutasi lain.
 
 1. Verifikasi target/schema/PDB, privilege, schema canonical, dan sembilan source SQL. Fixture dummy bersifat opsional. [Tabel bisnis](<../database/schema/T_KARYAWAN.sql>) dan [function](<../database/functions/F_CRUD_KARYAWAN_LOGISTIK.sql>) terlihat VALID pada target pengguna tanpa DDL oleh agent; target baru tetap memerlukan preflight/penerapan manual. Mismatch legacy menghentikan deployment.
-2. Restart dan recreate container dengan image existing/key aktif sudah diuji pada 30 Oktober. Upgrade image, restart host, serta pemulihan/restore tetap memerlukan izin dan bukti terpisah; hasil kedua tes tidak menutup seluruh recovery. Image resmi Python tersedia dan dipin digest.
+2. Restart/recreate image existing diuji pada 30 Oktober; deployment image baru pada 1 November serta pin operator dan auth/READ existing pada 2 November juga lulus. CRUD tulis pada image baru, restart host, serta pemulihan/restore tetap memerlukan izin dan bukti terpisah; hasil tersebut tidak menutup seluruh recovery. Image resmi Python tersedia dan dipin digest.
 3. Uji integrasi Oracle dengan fixture/cleanup dan izin terpisah. Historical key bukan bukti commit operasi asli; reconcile memakai pool baru dan lock GLOBAL, lalu review manual jika LAST_OPERATION_ID berubah.
 4. Uji TLS client/firewall, TCPS, distribusi/readiness/scheduler/alert, dan restore. Ukur p95 pada beban yang disepakati; durasi unit test atau probe koneksi bukan benchmark.
 5. Catat waktu/timezone, artefak/digest, command aman, lingkungan, hasil, batas, pemilik, dan sign-off untuk setiap gate. Jangan menandai lulus sebelum bukti tersedia.
